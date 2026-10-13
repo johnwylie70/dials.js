@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Layout. Controls are kept on titled plates: a `label` made just before some controls is their heading, and `group("filter", () => { … })` (or `group("filter")` and then the controls) says so with options. Plates wrap whole, so a heading is never left behind; wrapped lines are balanced; the plates of a line share its width and every line is as wide as the widest. Scenes written with `label` and `row()` alone are laid out this way with no change.
+- `row`, `column` and `grid(3, …)` arrange what is inside a group, and nest. `spacer()` takes the room left over. Any control takes `size: "small"` or `"large"`, `share` (its part of the room its line has left) and `span` (columns of a grid). A group takes `colour`, `columns`, `gap`, `align`, `dividers` and `plate`.
+- Controls are drawn a little smaller before a line wraps, and never tiny (not under eight tenths, and on a touch screen not under their size with a mouse). The keyboard and the scope above it give up some height next. What still does not fit is moved with a finger, the wheel or a bar, while the keyboard and that scope stay put. Before, controls shrank to six tenths and then ran under the keyboard.
+- `page("fx")`: pages of plates, turned with a tab.
+- `group("moves", { at: "left" }, …)` is a strip along an edge, `layout({ at: "left" })` puts every plate down one side, and `room()` is the rectangle no control is on.
+- `layout({ design: [800, 480] })`: `x` and `y` are in a panel of that size, scaled to the picture. A group can be placed too. `layout({ image, compact, dividers, plates, align })` for the look.
+- `examples/front_panel.js`: a whole synth in seven groups. The stand-in synth has the settings for it (voices, detune, a sub, decay and sustain, an echo and a room).
+- Changed: a label that comes before controls is drawn above them, as their plate's title, not at their left; a scene's rows of plates are all one width; a host's listener is also given `f`, the rectangle no control is on, when it changes.
 - Dials, sliders (across or upright), buttons, toggles and selects: `dial("speed", 0, 10)` gives a number to read, and `dial("cutoff", lead, "filter_cutoff")` is that setting of `lead`, with its range, unit and starting value taken from it.
 - A piano keyboard, `keyboard(lead, { octave: 4 })`: several fingers at once, sliding from key to key, the computer's keys by where they are (the row from A is the white keys), Z and X to step the octave, and keys lit while they sound.
 - A scope, `scope(lead)`, for a sound's wave or any value over time (`graph.push(value)`), and a level meter, `meter(lead)`.
