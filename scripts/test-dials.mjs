@@ -395,6 +395,7 @@ const SIZES = {
   phone: { width: 390, height: 844, touch: true },
   split: { width: 560, height: 1100, touch: true },
   tablet: { width: 1180, height: 820, touch: true },
+  full: { width: 1200, height: 1600, touch: true },
   desktop: { width: 1440, height: 900, touch: false },
 }
 /** A finger's target is never smaller than this, in points, on a screen that is touched. */
@@ -448,10 +449,30 @@ scope(lead)
 
 keyboard(lead, { octave: 3, octaves: 2 })
 `
+// The same panel as the owner wrote it the second time: seven short rows, a row() after each, so that nothing would wrap in a narrow view.
+const OWNER_ROWS = `label("oscillator"); select("wave", lead, "wave"); dial("width", lead, "width"); dial("sub", lead, "sub")
+row()
+label("pwm"); dial("amount", lead, "lfo2.pulse_width"); dial("speed", lead, "lfo2.rate")
+row()
+label("unison"); dial("voices", lead, "voices"); dial("detune", lead, "detune"); dial("spread", lead, "spread")
+row()
+label("filter"); select("filter", lead, "filter"); dial("cutoff", lead, "cutoff"); dial("resonance", lead, "resonance")
+row()
+label("shape"); dial("attack", lead, "attack"); dial("decay", lead, "decay"); dial("sustain", lead, "sustain"); dial("release", lead, "release")
+row()
+label("delay"); dial("amount", lead, "echo"); dial("time", lead, "delay.time"); dial("feedback", lead, "delay.feedback")
+row()
+label("reverb"); dial("amount", lead, "reverb"); dial("size", lead, "reverb.size"); dial("chorus", lead, "chorus")
+scope(lead)
+keyboard(lead, { octave: 3, octaves: 2 })
+`
+/** A panel is set against the picture's edges: no more of the width than this is left at either side of its lines of plates. */
+const MARGIN_MOST = 0.03
 const LAID = {
   six: `dial("speed", 0, 10, 4); dial("size", 5, 50, 20); dial("spin", 0, 1, 0.3); dial("red", 0, 255, 200); dial("green", 0, 255, 120); dial("blue", 0, 255, 40)
 function draw() { background("midnightblue"); circle(width / 2, height / 2, 60, "gold") }`,
   owner: LEAD + OWNER,
+  rows: LEAD + OWNER_ROWS,
   // Groups made with functions and in a straight line, one inside another, a column, a grid, sizes, a share and a spacer.
   groups: LEAD + `group("oscillator", () => { select("wave", lead, "wave"); dial("width", lead, "width"); dial("sub", lead, "sub") })
 group("unison", 3, () => { dial("voices", lead, "voices"); dial("detune", lead, "detune"); dial("spread", lead, "spread") })
@@ -609,6 +630,20 @@ async function layoutCases(browser, name, size) {
   } else {
     check(name, said('it all fits, and nothing is drawn tiny'), [r.controls.every((c) => c.at && c.at[3] === c.whole[3]), r.u >= (r.coarse ? 1 : 0.8)], [true, true])
   }
+
+  // The owner's second writing of it, a row() after every group: the plates still stand side by side to fill the width.
+  r = await lay(page, LAID.rows)
+  await page.waitForTimeout(700); r = await survey(page)      // a scene that draws nothing is seen to be a panel after a moment
+  const named = r.groups.filter((g) => g.plated && g.title).sort((a, b) => a.rect[1] - b.rect[1] || a.rect[0] - b.rect[0])
+  const tops = [...new Set(named.map((g) => Math.round(g.rect[1])))]
+  const perLine = tops.map((top) => named.filter((g) => Math.round(g.rect[1]) === top))
+  const edges = perLine.map((line) => [line[0].rect[0], r.W - (line.at(-1).rect[0] + line.at(-1).rect[2])])
+  const keys = r.controls.find((c) => c.kind === 'keyboard'), trace = r.controls.find((c) => c.kind === 'scope')
+  check(name, said('a panel written as seven short rows fills the width with lines of plates as tall as each other, set against both edges'),
+    [r.error || faults(r), perLine.map((line) => line.length).join(), perLine.every((line) => line.every((g) => Math.abs(g.rect[3] - line[0].rect[3]) < 0.5)),
+      edges.every(([left, right]) => left <= r.W * MARGIN_MOST && right <= r.W * MARGIN_MOST + (r.view ? 20 : 0)), keys.whole[1] - (trace.whole[1] + trace.whole[3]) < 30],
+    [[], { phone: '1,1,1,1,1,1,1', split: '2,2,1,2', tablet: '4,3', full: '4,3', desktop: '7' }[size], true, true, true])
+  await shot('rows')
 
   // Groups, one inside another, with a column, a grid, sizes, a share and a spacer.
   r = await lay(page, LAID.groups)
