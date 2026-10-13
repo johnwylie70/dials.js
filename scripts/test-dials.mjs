@@ -40,7 +40,7 @@ const at = `http://localhost:${server.address().port}`
 
 // Every scene starts with these: the library, and a way to wait for the controls to be laid out and drawn.
 const TOP = `const lib = await use("/dials.js")
-const { dial, slider, button, toggle, select, keyboard, scope, meter, label, group, row, column, grid, page, spacer, layout, room, over, dials, theme } = lib
+const { dial, slider, button, toggle, select, keyboard, scope, meter, label, group, row, column, grid, page, spacer, wrap, layout, room, over, dials, theme } = lib
 const drawn = async () => { await frame(); await frame(); await frame() }
 `
 // Run a scene on the page as it is now; what it left in `result`, or its error.
@@ -195,7 +195,7 @@ api.ack(); api.call(8, "feed", [0, 1, 0]); api.set(7, "value", 6)
 await drawn()
 window.result = [first, beats, heard.length, api.panel.find(7).value, api.panel.find(8).list.length]
 api.drop(7); api.drop(8)`,
-    want: ['[{"c":[],"n":[],"m":[7,2,9,4,"",5],"b":0,"f":[0,260,760,300]}]', 1, 2, 6, 3] },
+    want: ['[{"c":[],"n":[],"m":[7,2,9,4,"",5],"b":0,"f":[0,260,760,300,760,560,1]}]', 1, 2, 6, 3] },
 ]
 
 // --- cases with hands. `setup` is the scene; it leaves its controls in `window.t`. `act` uses them.
@@ -392,7 +392,9 @@ const check = (browser, what, got, want) => {
 // --------------------------------------------------------------------------------------------
 // LAYOUT, measured. Each scene is laid out at four sizes of screen and looked at as it was drawn.
 const SIZES = {
+  small: { width: 320, height: 640, touch: true },
   phone: { width: 390, height: 844, touch: true },
+  land: { width: 844, height: 390, touch: true },
   split: { width: 560, height: 1100, touch: true },
   tablet: { width: 1180, height: 820, touch: true },
   full: { width: 1200, height: 1600, touch: true },
@@ -505,10 +507,10 @@ window.said = () => room()`,
 // What the page has: every control, plate and group where it was put (and, where plates can be moved, the part that is seen).
 const SURVEY = `(() => {
   const p = document.querySelector("#s canvas")[Symbol.for("dials.panel")]
-  const seen = (c, clip) => { const v = clip === undefined ? c.view : clip; if (!v) return [c.x, c.y, c.w, c.h]; const t = Math.max(c.y, v.y), b = Math.min(c.y + c.h, v.y + v.h); return b > t ? [c.x, t, c.w, b - t] : null }
+  const seen = (c, clip) => { const v = clip === undefined ? c.view : clip; if (!v) return [c.x, c.y, c.w, c.h]; const t = Math.max(c.y, v.y), b = Math.min(c.y + c.h, v.y + v.h), l = Math.max(c.x, v.x), r = Math.min(c.x + c.w, v.x + v.w); return b > t && r > l ? [l, t, r - l, b - t] : null }
   const shown = (c) => !c.items && !c.ghost && !c.hidden && c.w > 0
   const controls = p.items.filter(shown).map((c) => ({ id: c.id, kind: c.kind, label: c.label, heading: !!c.heading, placed: !!c.at, at: seen(c), whole: [c.x, c.y, c.w, c.h],
-    felt: p.under(c.x + c.w / 2, c.y + c.h / 2) === c, middleSeen: !c.view || (c.y + c.h / 2 >= c.view.y && c.y + c.h / 2 < c.view.y + c.view.h) }))
+    felt: p.under(c.x + c.w / 2, c.y + c.h / 2) === c, middleSeen: !c.view || (c.y + c.h / 2 >= c.view.y && c.y + c.h / 2 < c.view.y + c.view.h && c.x + c.w / 2 >= c.view.x && c.x + c.w / 2 < c.view.x + c.view.w) }))
   const inside = (box) => box.items.flatMap((kid) => (kid.items ? inside(kid) : shown(kid) ? [kid.id] : []))
   const groups = [...p.boxes, ...p.items.filter((c) => c.items)].filter((b) => b.m && b.w > 0 && b.kind !== "page" && !(b.kind === "row" && !b.entered)).map((b) => {
     const head = b.heading && b.heading.heading ? b.heading : null
@@ -517,16 +519,18 @@ const SURVEY = `(() => {
     return { title, named, rect: [b.x, b.y, b.w, b.h], plated: p.plated(b), kids: inside(b), head: head ? head.id : null,
       lines: b.m.lines ? b.m.lines.map((line) => ({ n: line.kids.length, w: line.w, widest: Math.max(...line.kids.map((kid) => kid.m.w)) })) : null }
   })
-  const plates = p.plates.map((plate) => ({ at: seen({ x: plate[0], y: plate[1], w: plate[2], h: plate[3] }, plate.clip || null), inner: !!plate.inner })).filter((plate) => plate.at)
+  const every = p.plates.map((plate) => ({ at: seen({ x: plate[0], y: plate[1], w: plate[2], h: plate[3] }, plate.clip || null), whole: [...plate], inner: !!plate.inner }))
+  const plates = every.filter((plate) => plate.at)
   const v = p.viewport
-  return { W: p.W, H: p.H, u: p.u, coarse: p.coarse, controls, groups, plates, free: p.free, view: v && { y: v.y, h: v.h, max: v.max, scroll: v.scroll },
+  return { W: p.W, H: p.H, u: p.u, coarse: p.coarse, controls, groups, plates, every, free: p.free, view: v && { y: v.y, h: v.h, max: v.max, scroll: v.scroll, maxX: v.maxX, scrollX: v.scrollX },
+    designed: p.designed, info: p.info(),
     tabs: p.tabs.map((tab) => ({ name: tab.page.label, on: tab.page === p.shown, at: [tab.x, tab.y, tab.w, tab.h] })) }
 })()`
 
 const meet = (a, b, slack = 0.5) => a[0] < b[0] + b[2] - slack && b[0] < a[0] + a[2] - slack && a[1] < b[1] + b[3] - slack && b[1] < a[1] + a[3] - slack
 const holds = (outer, inner, slack = 0.75) => inner[0] >= outer[0] - slack && inner[1] >= outer[1] - slack && inner[0] + inner[2] <= outer[0] + outer[2] + slack && inner[1] + inner[3] <= outer[1] + outer[3] + slack
 /** Everything that is wrong with a layout, in words; none is what is wanted. */
-function faults(r) {
+function faults(r, asked = {}) {
   const wrong = [], all = [0, 0, r.W, r.H], name = (c) => `${c.kind} "${c.label}"`
   const seen = r.controls.filter((c) => c.at)
   for (const c of seen) if (!holds(all, c.at)) wrong.push(`${name(c)} is outside the picture`)
@@ -547,7 +551,7 @@ function faults(r) {
         if (!holds(group.rect, [...group.named, 0, 0])) wrong.push(`the title "${group.title}" is not on its group's plate`)
         for (const kid of kids) if (kid.id !== group.head && kid.whole[1] < group.named[1]) wrong.push(`the title "${group.title}" is not before ${name(kid)}`)
       }
-      if (group.plated && !r.plates.some((plate) => !plate.at || holds([group.rect[0], -1e6, group.rect[2], 2e6], plate.at) && Math.abs(plate.at[0] - group.rect[0]) < 1 && Math.abs(plate.at[2] - group.rect[2]) < 1)) wrong.push(`the group "${group.title}" has no plate`)
+      if (group.plated && !r.every.some((plate) => plate.whole.every((v, i) => Math.abs(v - group.rect[i]) < 1))) wrong.push(`the group "${group.title}" has no plate`)
     }
     if (group.lines && group.lines.length > 1) {
       const widths = group.lines.map((line) => line.w), widest = Math.max(...group.lines.map((line) => line.widest))
@@ -555,10 +559,10 @@ function faults(r) {
     }
   }
   // Never tiny: on a touch screen no smaller than with a mouse, and with a mouse no smaller than eight tenths.
-  if (r.u < (r.coarse ? 1 : 0.8) - 1e-6) wrong.push(`the controls are drawn at ${r.u} of their size`)
-  if (r.coarse) for (const c of r.controls) if (['dial', 'slider', 'button', 'toggle', 'select'].includes(c.kind) && Math.min(c.whole[2], c.whole[3]) < TOUCH_LEAST) wrong.push(`${name(c)} is ${c.whole.slice(2).map(Math.round)}: too small for a finger`)
+  if (r.u < (asked.least ?? (r.coarse ? 1 : 0.8)) - 1e-6) wrong.push(`the controls are drawn at ${r.u} of their size`)
+  if (r.coarse && asked.fingers !== false) for (const c of r.controls) if (['dial', 'slider', 'button', 'toggle', 'select'].includes(c.kind) && Math.min(c.whole[2], c.whole[3]) < TOUCH_LEAST) wrong.push(`${name(c)} is ${c.whole.slice(2).map(Math.round)}: too small for a finger`)
   // What does not fit is moved to be seen, not left out of sight: nothing is cut off except where the plates can be moved.
-  if (!r.view) for (const c of r.controls) if (!c.at || Math.abs(c.at[3] - c.whole[3]) > 0.5) wrong.push(`${name(c)} is cut off, and the plates cannot be moved`)
+  if (!r.view) for (const c of r.controls) if (!c.at || Math.abs(c.at[3] - c.whole[3]) > 0.5 || Math.abs(c.at[2] - c.whole[2]) > 0.5) wrong.push(`${name(c)} is cut off, and the plates cannot be moved`)
   return wrong
 }
 /** The titles of the plates, line by line down the picture. */
@@ -589,6 +593,98 @@ const turn = async (page, r, labels) => {
   return Math.round((await value() - before) * 1000) / 1000
 }
 
+
+// --- wrapping said in code, and a panel of a set size
+const MODES = {
+  nowrap: LEAD + 'layout({ wrap: false })\n' + OWNER,
+  floor: LEAD + 'layout({ wrap: false, minScale: 0.9 })\n' + OWNER,
+  insist: LEAD + 'layout({ wrap: false, minScale: 0 })\n' + OWNER,
+  columns: LEAD + 'layout({ columns: { phone: 1, tablet: 2, wide: 3 } })\n' + OWNER,
+  sized: LEAD + 'layout({ size: [900, 640] })\n' + OWNER,
+  marks: LEAD + `group("shape", { wrap: false }, () => { slider("attack", lead, "attack"); slider("decay", lead, "decay"); slider("sustain", lead, "sustain"); slider("release", lead, "release") })
+group("filter", () => { dial("cutoff", lead, "cutoff", { size: "large" }); dial("resonance", lead, "resonance"); dial("drive", lead, "chorus", { size: "small" }); wrap(); dial("width", lead, "width", { size: 1.5 }); dial("sub", lead, "sub") })
+row({ wrap: false }, () => {
+  group("delay", () => { dial("delay", lead, "echo"); dial("time", lead, "delay.time") })
+  group("reverb", () => { dial("reverb", lead, "reverb"); dial("size", lead, "reverb.size") })
+})
+keyboard(lead, { octave: 3, octaves: 2 })
+window.sizes = []
+window.told = layout({ onResize: (now) => window.sizes.push([now.width, now.height]) })`,
+}
+const WRITTEN = [['oscillator'], ['unison', 'filter'], ['shape'], ['delay', 'reverb']]
+let drawnScale = 0
+let drawnAt = null     // where everything of the panel of a set size is, in its own 900 by 640: the same on every screen
+
+async function modeCases(page, name, size, said, shot) {
+  const { width, height } = SIZES[size]
+  const dials = (r) => r.controls.filter((c) => c.kind === 'dial')
+  const plates = (r) => r.groups.filter((g) => g.plated && g.title)
+
+  // wrap: false. Every row is the row that was written, and one scale makes the widest fit the width.
+  let r = await lay(page, MODES.nowrap)
+  const right = (r) => Math.max(...plates(r).map((g) => g.rect[0] + g.rect[2]))
+  // The widest row fits the width; or, under a finger, the controls stop at the smallest that is comfortable (0.8) and the rows are moved sideways.
+  const fitted = (r) => (r.view && r.view.maxX ? r.coarse && Math.abs(r.u - 0.8) < 1e-6 : right(r) <= width + 0.5)
+  check(name, said('told not to wrap, every row is the row that was written, at one scale that fits the widest to the width (or, under a finger, no smaller than is comfortable)'),
+    [r.error || faults(r, { least: 0.5 }), plateLines(r), r.groups.every((g) => !g.lines || g.lines.length === 1), new Set(dials(r).map((c) => Math.round(c.whole[2] * 10))).size, fitted(r), r.u <= (r.coarse ? 1.15 : 1) + 1e-6],
+    [[], WRITTEN, true, 1, true, true])
+  check(name, said('and a dial drawn smaller to fit still keeps to the finger'), await turn(page, r, ['width', 'sub', 'spread', 'resonance']), 0.25)
+  await shot('nowrap')
+  if (width < 500) {
+    const small = await lay(page, MODES.insist)
+    check(name, said('minScale: 0 insists: as small as it takes to fit the width, with no moving sideways'), [faults(small, { least: 0, fingers: false }), plateLines(small), right(small) <= width + 0.5, !small.view || !small.view.maxX, small.u < 0.8], [[], WRITTEN, true, true, true])
+  }
+
+  // minScale: no smaller than that. Rows that are still too wide are moved from side to side.
+  r = await lay(page, MODES.floor)
+  if (width < 560) {
+    const from = [width / 2, r.groups.find((g) => g.title === 'oscillator').rect[1] + 12]
+    await page.mouse.move(...from); await page.mouse.wheel(60, 0)
+    const moved = await survey(page)
+    check(name, said('with a smallest scale the rows stop there, still unwrapped, and are moved from side to side'),
+      [faults(r, { least: 0.9 }), r.u, plateLines(r), r.view.maxX > 0, Math.round(moved.view.scrollX), faults(moved, { least: 0.9 })], [[], 0.9, WRITTEN, true, Math.min(60, Math.round(r.view.maxX)), []])
+    check(name, said('and a dial on rows moved sideways keeps to the finger'), await turn(page, moved, ['width', 'sub', 'spread', 'resonance', 'pwm']), 0.25)
+  } else check(name, said('a smallest scale is not reached where the rows fit'), [faults(r, { least: 0.9 }), r.u >= 0.9, plateLines(r)], [[], true, WRITTEN])
+
+  // columns: so many plates to a line, by the width.
+  r = await lay(page, MODES.columns)
+  const many = width >= 900 ? 3 : width >= 600 ? 2 : 1
+  const tops = [...new Set(plates(r).map((g) => Math.round(g.rect[1])))].map((top) => plates(r).filter((g) => Math.round(g.rect[1]) === top).length)
+  check(name, said(`columns by width puts ${many} to a line here`), [r.error || faults(r, { least: 0.5 }), tops, r.info.columns], [[], many === 3 ? [3, 3] : many === 2 ? [2, 2, 2] : [1, 1, 1, 1, 1, 1], many])
+  await shot('columns')
+
+  // A panel of a set size: laid out once, the same on every screen, and made to fit the picture whole.
+  r = await lay(page, MODES.sized)
+  const s = Math.min(width / 900, height / 640), ox = (width - 900 * s) / 2, oy = (height - 640 * s) / 2
+  const own = r.controls.map((c) => [c.label, ...c.whole.map((v, i) => Math.round((i === 0 ? v - ox : i === 1 ? v - oy : v) / s))])
+  drawnAt ||= own
+  const off = own.filter((c, i) => c.slice(1).some((v, j) => Math.abs(v - drawnAt[i][j + 1]) > 1))
+  check(name, said('a panel of a set size is the same on every screen, scaled whole and kept in the middle'),
+    [r.error || faults(r, { least: 0, fingers: false }), r.designed.map(Math.round), off, Math.abs(r.info.scale / s - (drawnScale ||= r.info.scale / s)) < 0.01 && drawnScale >= 0.8 && drawnScale <= 1, r.controls.every((c) => holds(r.designed, c.whole, 1))],
+    [[], [ox, oy, 900 * s, 640 * s].map(Math.round), [], true, true])
+  check(name, said('and a dial of it keeps to the finger at that scale'), await turn(page, r, ['width', 'sub', 'spread', 'resonance']), 0.25)
+  await shot('sized')
+
+  // A group told not to wrap, a place marked to wrap at, two groups kept side by side, and dials of three sizes.
+  r = await lay(page, MODES.marks)
+  const of = (title) => r.groups.find((g) => g.title === title)
+  const knob = (label) => r.controls.find((c) => c.kind === 'dial' && c.label === label).whole
+  const split = of('filter').lines.map((line) => line.n)
+  check(name, said('a group told not to wrap never does, a line is split only at its mark and only when it must be, and two groups kept together stay side by side'),
+    [r.error || faults(r, { least: 0.5 }), of('shape').lines.length, split.join() === '5' || split.join() === '3,2', Math.round(of('delay').rect[1]) === Math.round(of('reverb').rect[1]), of('delay').plated && of('reverb').plated],
+    [[], 1, true, true, true])
+  check(name, said('a bigger dial stays that much bigger at any scale, and its label and value line up with its neighbours\''),
+    [Math.round(knob('cutoff')[2] / knob('resonance')[2] * 100), knob('cutoff')[1] === knob('resonance')[1] && knob('cutoff')[3] === knob('resonance')[3], knob('drive')[3] === knob('cutoff')[3], knob('width')[2] > knob('sub')[2]],
+    [Math.round(90 / 76 * 100), true, true, true])
+  await shot('marks')
+  if (size === 'desktop') {
+    const told = await page.evaluate('[window.told.width, window.told.height, window.told.scale, window.sizes]')
+    await page.setViewportSize({ width: 700, height: 500 }); await page.waitForTimeout(250)
+    check(name, said('layout() says the size and the scale, and onResize is called when the picture changes size'), [told, await page.evaluate('[window.sizes, dials().layout().width]').catch(() => page.evaluate('window.sizes'))], [[width, height, 1, [[width, height]]], [[width, height], [700, 500]]])
+    await page.setViewportSize({ width, height })
+  }
+}
+
 async function layoutCases(browser, name, size) {
   const { width, height, touch } = SIZES[size]
   const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch, isMobile: touch && name === 'chromium', deviceScaleFactor: 1 })
@@ -602,7 +698,7 @@ async function layoutCases(browser, name, size) {
 
   // Six dials and nothing else: one tidy plate, wrapped evenly where it must be.
   let r = await lay(page, LAID.six)
-  check(name, said('six dials and nothing else are one tidy plate'), [r.error || faults(r), r.plates.length, r.groups[0].lines.map((line) => line.n)], [[], 1, size === 'phone' ? [3, 3] : [6]])
+  check(name, said('six dials and nothing else are one tidy plate'), [r.error || faults(r), r.plates.length, r.groups[0].lines.map((line) => line.n)], [[], 1, size === 'phone' || size === 'small' ? [3, 3] : [6]])
   if (touch && name === 'chromium') check(name, said('a touch screen is known, and its controls are bigger'), [r.coarse, r.u >= 1], [true, true])
   await shot('six')
 
@@ -613,7 +709,9 @@ async function layoutCases(browser, name, size) {
     [[], [['oscillator', 5], ['unison', 3], ['filter', 3], ['shape', 4], ['delay', 3], ['reverb', 3]]])
   if (size === 'split') check(name, said('and its plates stand as its rows were written'), plateLines(r), [['oscillator'], ['unison', 'filter'], ['shape'], ['delay', 'reverb']])
   const piano = r.controls.find((c) => c.kind === 'keyboard'), wave = r.controls.find((c) => c.kind === 'scope')
-  check(name, said('the keyboard is along the bottom and the scope just above it, both whole'), [piano.at[1] + piano.at[3] > height - 30, wave.at[1] + wave.at[3] <= piano.at[1], wave.at[3] === wave.whole[3], wave.at[2] > width * 0.8], [true, true, true, true])
+  // On a phone on its side there is too little height for both: the scope is put away, and the keyboard takes no more than four tenths.
+  if (size === 'land') check(name, said('with very little height the scope is put away and the keyboard keeps to its share, with keys wide enough to play'), [!wave, piano.at[3] <= height * 0.42, piano.at[1] + piano.at[3] > height - 30, r.view.h >= 190, piano.at[2] / 15 >= 22], [true, true, true, true, true])
+  else check(name, said('the keyboard is along the bottom and the scope just above it, both whole'), [piano.at[1] + piano.at[3] > height - 30, wave.at[1] + wave.at[3] <= piano.at[1], wave.at[3] === wave.whole[3], wave.at[2] > width * 0.8], [true, true, true, true])
   await shot('owner')
   if (r.view) {
     // More than fits: a finger on a heading moves the plates, and a dial that was moved still keeps to the finger.
@@ -625,11 +723,12 @@ async function layoutCases(browser, name, size) {
     check(name, said('a dial on plates that were moved keeps to the finger'), await turn(page, moved, ['sub', 'spread', 'resonance', 'feedback', 'size', 'width']), 0.25)
     await page.mouse.move(from[0], from[1]); await page.mouse.wheel(0, 100000)
     const end = await survey(page)
-    check(name, said('the wheel moves them too, as far as they go, and the keyboard and scope stay put'), [faults(end), end.view.scroll === end.view.max, end.controls.find((c) => c.kind === 'keyboard').at, end.controls.find((c) => c.kind === 'scope').at], [[], true, moved.controls.find((c) => c.kind === 'keyboard').at, moved.controls.find((c) => c.kind === 'scope').at])
+    check(name, said('the wheel moves them too, as far as they go, and the keyboard and scope stay put'), [faults(end), end.view.scroll === end.view.max, end.controls.find((c) => c.kind === 'keyboard').at, end.controls.find((c) => c.kind === 'scope')?.at], [[], true, moved.controls.find((c) => c.kind === 'keyboard').at, moved.controls.find((c) => c.kind === 'scope')?.at])
     await shot('owner-moved')
   } else {
     check(name, said('it all fits, and nothing is drawn tiny'), [r.controls.every((c) => c.at && c.at[3] === c.whole[3]), r.u >= (r.coarse ? 1 : 0.8)], [true, true])
   }
+  await modeCases(page, name, size, said, shot)
 
   // The owner's second writing of it, a row() after every group: the plates still stand side by side to fill the width.
   r = await lay(page, LAID.rows)
@@ -638,11 +737,11 @@ async function layoutCases(browser, name, size) {
   const tops = [...new Set(named.map((g) => Math.round(g.rect[1])))]
   const perLine = tops.map((top) => named.filter((g) => Math.round(g.rect[1]) === top))
   const edges = perLine.map((line) => [line[0].rect[0], r.W - (line.at(-1).rect[0] + line.at(-1).rect[2])])
-  const keys = r.controls.find((c) => c.kind === 'keyboard'), trace = r.controls.find((c) => c.kind === 'scope')
+  const keys = r.controls.find((c) => c.kind === 'keyboard'), trace = r.controls.find((c) => c.kind === 'scope') || (size === 'land' ? { whole: [0, keys.whole[1], 0, 0] } : null)
   check(name, said('a panel written as seven short rows fills the width with lines of plates as tall as each other, set against both edges'),
     [r.error || faults(r), perLine.map((line) => line.length).join(), perLine.every((line) => line.every((g) => Math.abs(g.rect[3] - line[0].rect[3]) < 0.5)),
-      edges.every(([left, right]) => left <= r.W * MARGIN_MOST && right <= r.W * MARGIN_MOST + (r.view ? 20 : 0)), keys.whole[1] - (trace.whole[1] + trace.whole[3]) < 30],
-    [[], { phone: '1,1,1,1,1,1,1', split: '2,2,1,2', tablet: '4,3', full: '4,3', desktop: '7' }[size], true, true, true])
+      edges.every(([left, right]) => left <= Math.max(12, r.W * MARGIN_MOST) && right <= Math.max(12, r.W * MARGIN_MOST) + (r.view ? 22 : 0)), keys.whole[1] - (trace.whole[1] + trace.whole[3]) < 30],
+    [[], { small: '1,1,1,1,1,1,1', phone: '1,1,1,1,1,1,1', land: '3,2,2', split: '2,2,1,2', tablet: '4,3', full: '4,3', desktop: '7' }[size], true, true, true])
   await shot('rows')
 
   // Groups, one inside another, with a column, a grid, sizes, a share and a spacer.
@@ -662,8 +761,8 @@ async function layoutCases(browser, name, size) {
   const tab = r.tabs[1].at
   await finger(page, 'pointerdown', 41, [tab[0] + tab[2] / 2, tab[1] + tab[3] / 2]); await finger(page, 'pointerup', 41, [tab[0] + tab[2] / 2, tab[1] + tab[3] / 2])
   const turned = await survey(page)
-  check(name, said('pages are turned with a tab, and only the page on show is there'), [...first, faults(turned), turned.tabs.map((t) => t.on), labels(turned), turned.tabs.map((t) => t.at), turned.controls.find((c) => c.kind === 'scope').at],
-    [[], [['osc', true], ['fx', false]], ['width', 'sub', 'voices', 'detune', 'spread'], [], [false, true], ['delay', 'time', 'feedback', 'reverb', 'size'], r.tabs.map((t) => t.at), r.controls.find((c) => c.kind === 'scope').at])
+  check(name, said('pages are turned with a tab, and only the page on show is there'), [...first, faults(turned), turned.tabs.map((t) => t.on), labels(turned), turned.tabs.map((t) => t.at), turned.controls.find((c) => c.kind === 'scope')?.at],
+    [[], [['osc', true], ['fx', false]], ['width', 'sub', 'voices', 'detune', 'spread'], [], [false, true], ['delay', 'time', 'feedback', 'reverb', 'size'], r.tabs.map((t) => t.at), r.controls.find((c) => c.kind === 'scope')?.at])
   check(name, said('a dial on the page turned to keeps to the finger'), await turn(page, turned, ['delay', 'time', 'feedback', 'size']), 0.25)
   await shot('pages')
 

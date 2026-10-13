@@ -17,7 +17,8 @@
  *   row(…), column(…), grid(3, …), spacer()         how the controls inside one are arranged
  *   page("fx")                                      a page of plates, turned to with a tab
  *   group("moves", { at: "left" }, …), room()       a strip along an edge, and the rectangle left over
- *   { x, y }, layout({ design: [800, 480] })        exactly where you say, in a size that scales
+ *   layout({ wrap: false }), layout({ columns: 3 })  rows kept as written and drawn to fit; so many plates to a line
+ *   layout({ size: [800, 480] }), { x, y }          a panel of a set size on every screen; exactly where you say
  *
  * THE CONTROLS ARE DRAWN ON A CANVAS OF THEIR OWN, laid exactly over the scene's. So they sit on
  * top of whatever the scene draws, 2D or 3D, need no call in draw(), and cost the scene nothing:
@@ -164,7 +165,7 @@ class Control {
     return THEME.accent
   }
   /** `size: "small"` and `"large"` draw it smaller and larger; a dial, slider and meter read `size` themselves. */
-  scaleOf() { return this.size === 'small' ? 0.85 : this.size === 'large' ? 1.25 : 1 }
+  scaleOf() { return typeof this.size === 'number' && this.size <= SIZE_TIMES ? this.size : this.size === 'small' ? 0.85 : this.size === 'large' ? 1.25 : 1 }
   /** How far it may be narrowed and widened to fit its line, as parts of its natural width. */
   stretch() { return [1, 1] }
   /** Its value changed by hand: tell the target, the scene and whoever listens. */
@@ -270,7 +271,9 @@ class Ranged extends Control {
 }
 
 /** A size given as a number, or by name. */
-const sized = (size, small, usual, large) => (typeof size === 'number' ? size : size === 'small' ? small : size === 'large' ? large : usual)
+const sized = (size, small, usual, large) => (typeof size === 'number' ? (size <= SIZE_TIMES ? usual * size : size) : size === 'small' ? small : size === 'large' ? large : usual)
+/** A size no bigger than this is so many times the usual size (`size: 1.5`); a bigger number is points across. */
+const SIZE_TIMES = 4
 
 /** How far a finger travels to take a dial from one end to the other, in points. */
 const DIAL_TRAVEL = 180
@@ -296,8 +299,9 @@ class Dial extends Ranged {
     this.slide(this.pos + travel / (DIAL_TRAVEL * u) * fine)
   }
   draw(g, u) {
+    // The label is at the top of its box and the value at the bottom, so those of a big dial and a small one beside it line up.
     const cx = this.x + this.w / 2, cy = this.y + 20 * u + (this.h - 40 * u) / 2
-    const r = (this.h - 50 * u) / 2
+    const r = sized(this.size, 36, 48, 64) * u / 2
     const from = TAU * 0.375, sweep = TAU * 0.75
     const pos = this.toPos(this.v)
     words(g, this.label, cx, this.y + 12 * u, 12 * u, THEME.dim, 'center', '', this.w - 6 * u)
@@ -580,6 +584,9 @@ const KEY_NOTES = { KeyA: 0, KeyW: 1, KeyS: 2, KeyE: 3, KeyD: 4, KeyF: 5, KeyT: 
 const KEY_HINTS = ['A', 'W', 'S', 'E', 'D', 'F', 'T', 'G', 'Y', 'H', 'U', 'J', 'K', 'O', 'L', 'P', ';', "'"]
 const WHITE = [0, 2, 4, 5, 7, 9, 11]
 const IS_BLACK = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0]
+/** A white key is never narrower than this, in points: with a mouse, and under a finger. Fewer octaves are shown instead. */
+const KEY_LEAST = 14
+const KEY_LEAST_FINGER = 22
 /** How hard the computer's keys play, 0 to 1. */
 const KEY_VELOCITY = 0.8
 
@@ -616,10 +623,14 @@ class Keyboard extends Control {
   /** The notes held on it now, lowest first. */
   get notes() { return [...this.count.keys()].sort((a, b) => a - b) }
   get low() { return 12 * (this.first + 1) }
-  span(u) { return this.octaves || clamp(Math.floor(this.w / (7 * 34 * u)), 1, 4) }
+  /** How many octaves are shown: as many as asked for, but never so many that a key is too narrow to play. */
+  span(u) {
+    const playable = Math.max(1, Math.floor(this.w / (7 * (this.panel.coarse ? KEY_LEAST_FINGER : KEY_LEAST) * u)))
+    return this.octaves ? Math.min(this.octaves, playable) : clamp(Math.floor(this.w / (7 * 34 * u)), 1, 4)
+  }
   natural(u, room) {
     // Short of room, it gives up some of its height before the controls above it have to be moved to be seen.
-    if (!this.box || this.at) return [this.wide ? this.wide * u : room, (this.tall || (this.panel.squeeze && !this.at ? 116 : 150)) * u]
+    if (!this.box || this.at) return [this.wide ? this.wide * u : room, (this.tall || (this.at ? 150 : [150, 116, 96][this.panel.squeeze || 0])) * u]
     return [this.wide ? this.wide * u : Math.min(room, 7 * 30 * (this.octaves || 2) * u), (this.tall || 130) * u]
   }
   stretch() { return this.wide || !this.box ? [1, 1] : [0.6, Infinity] }
@@ -654,7 +665,7 @@ class Keyboard extends Control {
   }
   /** Where the keys are: below a strip that names the range and steps the octave. */
   shape(u) {
-    const strip = 22 * u
+    const strip = (this.panel.coarse ? 30 : 22) * u
     const whites = 7 * this.span(u) + 1
     return { strip, top: this.y + strip, tall: this.h - strip, whites, each: this.w / whites }
   }
@@ -944,6 +955,8 @@ const KINDS = { dial: Dial, slider: Slider, button: Button, toggle: Toggle, sele
  */
 const BOXES = ['group', 'row', 'column', 'grid', 'page']
 const EDGES = ['left', 'right', 'top', 'bottom']
+/** The widths, in points, that `layout({ columns: { phone: 1, tablet: 2, wide: 3 } })` names: from this width up. */
+const WIDTHS = { phone: 0, narrow: 0, tablet: 600, wide: 900, desktop: 1200 }
 
 class Box {
   constructor(panel, kind, spec) {
@@ -969,6 +982,8 @@ class Box {
     this.dividers = spec.dividers
     this.gap = spec.gap
     this.align = spec.align
+    this.wrap = spec.wrap // false: what is in it stays on one line, whatever the width
+    this.soft = !!spec.soft // a row() that is only a place to end a line if a line has to end
     this.box = null
     this.x = this.y = this.w = this.h = 0
     this.m = null
@@ -1050,6 +1065,11 @@ const LOOK_EVERY = 30
 const SMALLEST = 0.8
 /** On a touch screen they are drawn this much bigger, and never smaller than their size with a mouse: fingers need the room. */
 const FINGER_SCALE = 1.15
+/** Told to fit the width, controls are not drawn smaller than this by default: under a finger, and with a mouse. `minScale` says otherwise. */
+const FINGER_LEAST = 0.8
+const MOUSE_LEAST = 0.5
+/** Where the plates have to be moved to be seen, at least this much height is left to see them in, in points: the scope goes first. */
+const SEEN_LEAST = 190
 /** Lines of plates that are this part of the width already are spread to fill all of it. */
 const FILLS = 0.6
 /** A finger on one of these moves the plates under it when there is more than fits: they take no hand themselves. */
@@ -1088,6 +1108,10 @@ class Panel {
     this.viewport = null // where the plates can be moved up and down, when there is more than fits
     this.free = [0, 0, 0, 0] // the rectangle no control is on
     this.freeSaid = ''
+    this.pans = new Map() // a page (or the root) -> how far across it has been moved
+    this.inset = [0, 0, 0, 0] // what the screen keeps of the picture's edges (a notch, a home bar): left, top, right, bottom
+    this.zoomed = 1 // a panel of a set size is laid out at that size, then drawn this many times bigger
+    this.scale = 1 // the scale the layout chose
     this.W = this.H = 0
     this.ratio = 1
     this.u = 1
@@ -1108,12 +1132,13 @@ class Panel {
     // What a finger holds when it moves the plates: it is given the pointer as a control is.
     this.scroller = {
       held: false, bar: false, last: 0,
-      down: (p) => { this.scroller.last = p.y },
+      down: (p) => { this.scroller.last = p.y; this.scroller.lastX = p.x },
       move: (p) => {
-        const v = this.viewport, by = p.y - this.scroller.last
+        const v = this.viewport, by = p.y - this.scroller.last, across = p.x - this.scroller.lastX
         this.scroller.last = p.y
+        this.scroller.lastX = p.x
         // On the bar the thumb follows the finger; anywhere else the plates do.
-        if (v) this.scrollBy(this.scroller.bar ? by * (v.h + v.max) / v.h : -by)
+        if (v) this.scrollBy(this.scroller.bar ? by * (v.h + v.max) / v.h : -by, this.scroller.bar ? 0 : -across)
       },
       up() {}, touch() {},
     }
@@ -1130,7 +1155,7 @@ class Panel {
       const v = this.viewport, p = this.point(e)
       if (!v || p.x < v.x || p.x >= v.x + v.w || p.y < v.y || p.y >= v.y + v.h) return
       e.preventDefault()
-      this.scrollBy(e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY)
+      this.scrollBy(e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY, e.deltaMode === 1 ? e.deltaX * 30 : e.deltaX)
     }, { passive: false })
     listen(canvas, 'keydown', (e) => { for (const item of this.items) if (item.keyDown && item.keyDown(e)) { e.preventDefault(); break } })
     listen(canvas, 'keyup', (e) => { for (const item of this.items) if (item.keyUp) item.keyUp(e) })
@@ -1167,14 +1192,31 @@ class Panel {
     const W = canvas.clientWidth, H = canvas.clientHeight, ratio = window.devicePixelRatio || 1
     layer.style.left = canvas.offsetLeft + 'px'
     layer.style.top = canvas.offsetTop + 'px'
-    if (W === this.W && H === this.H && ratio === this.ratio) return
-    this.W = W; this.H = H; this.ratio = ratio
+    const inset = this.insets()
+    if (W === this.W && H === this.H && ratio === this.ratio && inset.join() === this.inset.join()) return
+    this.W = W; this.H = H; this.ratio = ratio; this.inset = inset
     layer.style.width = W + 'px'
     layer.style.height = H + 'px'
     layer.width = Math.max(1, Math.round(W * ratio))
     layer.height = Math.max(1, Math.round(H * ratio))
     this.arrange = true
     this.frames = 0
+  }
+
+  /** How much of each edge of the picture the screen keeps for itself (a phone's notch and home bar): left, top, right, bottom. */
+  insets() {
+    try {
+      if (!Panel.edges) {
+        Panel.edges = document.createElement('div')
+        Panel.edges.style.cssText = 'position:fixed;inset:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px)'
+      }
+      if (!Panel.edges.isConnected) document.documentElement.append(Panel.edges)
+      const kept = getComputedStyle(Panel.edges), box = this.canvas.getBoundingClientRect()
+      const part = (name, gone) => Math.max(0, (parseFloat(kept[name]) || 0) - Math.max(0, gone))
+      return [part('paddingLeft', box.left), part('paddingTop', box.top), part('paddingRight', innerWidth - box.right), part('paddingBottom', innerHeight - box.bottom)]
+    } catch (e) {
+      return [0, 0, 0, 0]
+    }
   }
 
   // --- what is in what: controls are put in boxes as they are made
@@ -1302,14 +1344,41 @@ class Panel {
     this.arrange = true
   }
   /** Move the plates up (a positive number) or down by so many points, as far as they go. */
-  scrollBy(by) {
+  scrollBy(by, across = 0) {
     const v = this.viewport
     if (!v) return
-    const next = clamp(v.scroll + by, 0, v.max)
-    if (next === v.scroll) return
+    const next = clamp(v.scroll + by, 0, v.max), over = clamp(v.scrollX + across, 0, v.maxX)
+    if (next === v.scroll && over === v.scrollX) return
     v.scroll = next
-    this.scrolls.set(v.key, next)
+    v.scrollX = over
+    // Kept in the layout's own measure, which a panel of a set size is not drawn in.
+    this.scrolls.set(v.key, next / this.zoomed)
+    this.pans.set(v.key, over / this.zoomed)
     this.shift = true
+  }
+  /** How many plates to a line the scene asked for at this width (0: it did not say). */
+  columnsAt(width) {
+    const asked = this.options.columns
+    if (asked == null) return 0
+    if (typeof asked === 'number') return Math.max(0, Math.round(asked))
+    let from = -1, many = 0
+    for (const name in asked) {
+      const least = WIDTHS[name] ?? Number(name)
+      if (least <= width && least > from) { from = least; many = asked[name] }
+    }
+    return Math.max(0, Math.round(many) || 0)
+  }
+  /** A panel of a set size: { w, h } it is laid out at, and how it is then put on the picture (s times bigger, from ox, oy). */
+  panelSize() {
+    const o = this.options, given = o.size ?? o.design
+    if (!given) return null
+    const [w, h] = typeof given === 'number' ? [given, 0] : Array.isArray(given) ? given : [given.width, given.height]
+    if (!(w > 0)) return null
+    const [l, t, r, b] = this.inset, W = Math.max(1, this.W - l - r), H = Math.max(1, this.H - t - b)
+    // A width alone, or fit: "width": as wide as the picture and as tall as that leaves, so what does not fit is moved up and down.
+    if (!(h > 0) || o.fit === 'width') return { w, h: H * w / W, s: W / w, ox: l, oy: t }
+    const s = Math.min(W / w, H / h)
+    return { w, h, s, ox: l + (W - w * s) / 2, oy: t + (H - h * s) / 2 }
   }
 
   // --- layout: how much room each thing wants (measure), then where each thing goes (arrange)
@@ -1324,7 +1393,16 @@ class Panel {
   plated(box) {
     if (box.plate != null) return !!box.plate
     if (this.options.plates === false) return false
-    return !box.box || box.box.kind === 'root' || box.box.kind === 'page'
+    if (this.bare(box)) return false
+    // A row that holds only groups is not a plate: each of its groups is.
+    let home = box.box
+    while (home && home.plate == null && this.bare(home)) home = home.box
+    return !home || home.kind === 'root' || home.kind === 'page'
+  }
+  bare(box) {
+    if (box.kind !== 'row' || !box.entered || box.label) return false
+    const kids = box.items.filter((kid) => !isBreak(kid) && this.shows(kid))
+    return kids.length > 0 && kids.every((kid) => kid.items)
   }
   measure(node, room) {
     if (node.items) return this.measureBox(node, room)
@@ -1332,6 +1410,7 @@ class Panel {
     const [w, h] = node.natural(u, room, this.g)
     const [least, most] = node.stretch(u)
     const wide = Math.min(w, room)
+    node.rowH = 0
     node.m = { w: wide, h, min: Math.min(wide, w * least), max: node.share != null ? Infinity : Math.max(wide, w * most), greedy: node.share != null }
     return node.m
   }
@@ -1355,12 +1434,17 @@ class Panel {
       g.font = `600 ${(plated ? 13 : 11.5) * u}px ${THEME.font}`
       tw = g.measureText(box.label).width + 14 * u
     }
-    const gap = (box.gap ?? (k.compact ? 6 : 10)) * u
+    const bare = this.bare(box)
+    const gap = bare && box.gap == null ? k.gap : (box.gap ?? (k.compact ? 6 : 10)) * u
+    // Told not to wrap (itself, or the whole panel): what is in it stays on one line, however wide that is.
+    const held = box.wrap === false || (this.hold && box.wrap !== true)
     // Controls carry their own room around them; boxes are kept a gap apart, and so is everything when a gap is asked for.
     const between = (a, b) => (a.items || b.items || box.gap != null ? gap : 0)
-    const real = kids.filter((kid) => !isBreak(kid))
     const side = box.dock === 'left' || box.dock === 'right'
-    const way = box.kind === 'grid' || box.columns ? 'grid' : box.kind === 'column' || (side && box.kind === 'group') ? 'column' : 'flow'
+    // A strip down one side that is too tall for the picture is two columns, or three (`box.folds`).
+    const folded = side && box.kind === 'group' && box.folds > 1
+    const real = kids.filter((kid) => !isBreak(kid) && !(folded && kid.kind === 'spacer' && typeof kid.size !== 'number'))
+    const way = box.kind === 'grid' || box.columns || folded ? 'grid' : box.kind === 'column' || (side && box.kind === 'group') ? 'column' : 'flow'
     // Something inside that asks for a share of the room makes the box ask for all there is (a spacer in a column asks for height, not width).
     let greedy = false
     for (const kid of real) greedy = (this.measure(kid, inner).greedy && !(way === 'column' && kid.kind === 'spacer')) || greedy
@@ -1371,12 +1455,12 @@ class Panel {
       real.forEach((kid, i) => { w = Math.max(w, kid.m.w); narrow = Math.max(narrow, kid.m.min); h += kid.m.h + (i ? between(real[i - 1], kid) : 0) })
     } else if (way === 'grid') {
       const each = box.gap != null ? gap : 0
-      let cols = clamp(box.columns || real.length, 1, Math.max(1, real.length))
+      let cols = clamp(folded ? box.folds : box.columns || real.length, 1, Math.max(1, real.length))
       const over = (kid) => Math.min(kid.across || 1, cols)
       // Fewer columns when they would not fit, and then no more than fill the lines evenly.
       const least = Math.max(1, ...real.map((kid) => kid.m.min / over(kid)))
       const fit = Math.max(1, Math.floor((inner + each) / (least + each)))
-      if (cols > fit) {
+      if (cols > fit && !held) {
         cols = Math.ceil(real.length / Math.ceil(real.length / fit))
         this.wraps++
       }
@@ -1393,27 +1477,32 @@ class Panel {
       m.cols = cols
       m.each = each
       m.rowGap = box.gap != null ? gap : 2 * u
-      w = Math.min(inner, cols * cell + (cols - 1) * each)
+      w = held ? cols * cell + (cols - 1) * each : Math.min(inner, cols * cell + (cols - 1) * each)
       narrow = cols * least + (cols - 1) * each
       h = m.rows.reduce((sum, tall) => sum + tall, 0) + Math.max(0, m.rows.length - 1) * m.rowGap
     } else {
-      const runs = [[]]
-      for (const kid of kids) isBreak(kid) ? runs.push([]) : runs.at(-1).push(kid)
+      // A row() starts a new line; wrap() only marks where a line may end if one has to.
+      const runs = [{ kids: [], ends: new Set() }]
+      for (const kid of kids) {
+        if (!isBreak(kid)) runs.at(-1).kids.push(kid)
+        else if (!kid.soft) runs.push({ kids: [], ends: new Set() })
+        else if (runs.at(-1).kids.length) runs.at(-1).ends.add(runs.at(-1).kids.length)
+      }
       m.lines = []
       for (const run of runs) {
-        if (!run.length) continue
-        const made = wrapLines(run, inner, between, null)
+        if (!run.kids.length) continue
+        const made = wrapLines(run.kids, held ? Infinity : inner, between, run.ends)
         this.wraps += made.length - 1
         m.lines.push(...made)
       }
       m.rowGap = real.some((kid) => kid.items) || box.gap != null ? gap : 2 * u
       for (const line of m.lines) {
-        w = Math.max(w, Math.min(line.w, inner))
+        w = Math.max(w, held ? line.w : Math.min(line.w, inner))
         narrow = Math.max(narrow, line.kids.reduce((sum, kid, i) => sum + kid.m.min + (i ? between(line.kids[i - 1], kid) : 0), 0))
       }
       h = m.lines.reduce((sum, line) => sum + line.h, 0) + Math.max(0, m.lines.length - 1) * m.rowGap
     }
-    if (greedy) w = inner
+    if (greedy && !held) w = Math.max(w, inner)
     if (box.wide && !box.at) w = Math.min(inner, Math.max(w, box.wide * u - 2 * pad))
     w = Math.max(w, Math.min(tw, inner))
     m.body = h
@@ -1434,6 +1523,7 @@ class Panel {
     const widths = kids.map((kid) => kid.m.w)
     const spare = room - widths.reduce((sum, w) => sum + w, 0)
     if (spare < -0.5) {
+      if (this.hold) return widths
       const give = kids.map((kid) => kid.m.w - kid.m.min), all = give.reduce((sum, w) => sum + w, 0)
       if (all > 0) give.forEach((w, i) => { widths[i] -= w * Math.min(1, -spare / all) })
       return widths
@@ -1467,7 +1557,7 @@ class Panel {
     const m = node.m
     node.w = Math.min(w, m.max)
     // A scope beside taller things is as tall as they are.
-    node.h = node.kind === 'scope' && !node.tall ? Math.max(m.h, h) : Math.min(m.h, h)
+    node.h = node.kind === 'scope' && !node.tall ? Math.max(m.h, h) : Math.min(Math.max(m.h, node.rowH || 0), h)
     node.x = x + (w - node.w) / 2
     node.y = y + (h - node.h) / 2
   }
@@ -1523,6 +1613,10 @@ class Panel {
         const widths = this.spread(line.kids, cw - gaps, align)
         const used = widths.reduce((sum, wide) => sum + wide, gaps)
         let kx = cx + (align === 'end' ? cw - used : align === 'center' ? (cw - used) / 2 : 0)
+        // Dials of different sizes on one line are all given the height of the biggest, so their labels and values line up.
+        const turned = line.kids.filter((kid) => kid.kind === 'dial' || kid.kind === 'rotary')
+        const tallest = Math.max(0, ...turned.map((kid) => kid.m.h))
+        for (const kid of turned) kid.rowH = tallest
         line.kids.forEach((kid, i) => {
           if (i) {
             const apart = m.between(line.kids[i - 1], kid)
@@ -1542,21 +1636,32 @@ class Panel {
    * share) is `wide`: it is as wide as the picture, and is not counted in `w`, the width the other lines share.
    */
   flow(kids, room) {
-    const gap = this.k.gap, runs = [], lines = []
+    const gap = this.k.gap, runs = [], lines = [], between = () => gap
     // Plates with titles are a panel: they stand side by side to fill the width, a row() between them saying
-    // where a line should end when a line has to. Anything else keeps its rows as they were written.
+    // where a line should end when a line has to. Anything else keeps its rows as they were written. Told how
+    // (wrap: true or false), every row() is a new line; told how many to a line (columns), that many.
     const titled = (kid) => !!(kid.label || kid.heading) && !kid.full
-    const join = this.options.wrap == null
-    let run = null, broke = false
+    const many = this.columnsNow
+    const join = (this.options.wrap == null && !this.hold) || many > 0
+    let run = null, broke = false, soft = false
     for (const kid of kids) {
-      if (isBreak(kid)) { broke = true; continue }
+      if (isBreak(kid)) { if (kid.soft) soft = true; else broke = true; continue }
       this.measure(kid, room)
       if (run && broke && join && titled(kid) && run.kids.every(titled)) run.ends.add(run.kids.length)
       else if (!run || broke) runs.push(run = { kids: [], ends: new Set() })
-      broke = false
+      else if (soft) run.ends.add(run.kids.length)
+      broke = soft = false
       run.kids.push(kid)
     }
-    for (const run of runs) lines.push(...wrapLines(run.kids, room, () => gap, run.ends))
+    for (const run of runs) {
+      if (many && run.kids.every((kid) => !kid.full)) {
+        for (let from = 0; from < run.kids.length; from += many) lines.push(...wrapLines(run.kids.slice(from, from + many), Infinity, between, null))
+      } else lines.push(...wrapLines(run.kids, this.hold ? Infinity : room, between, run.ends))
+    }
+    // How much wider than the room the widest line is, with everything in it as narrow as it goes.
+    // (Told not to wrap, nothing is squeezed to fit: the one scale does it all, so every line is spaced alike.)
+    const least = this.hold ? 'w' : 'min'
+    for (const line of lines) this.over = Math.max(this.over, line.kids.reduce((sum, kid) => sum + kid.m[least], gap * (line.kids.length - 1)) - room)
     for (const line of lines) line.wide = line.kids.some((kid) => kid.full || kid.m.greedy)
     this.lines += lines.length
     return {
@@ -1590,21 +1695,29 @@ class Panel {
    * it made.
    */
   compose(u, gutter) {
-    const { W, H, options, g, root } = this
+    const { options, g, root } = this
+    // A panel of a set size is laid out in that size, whatever the picture's, and put on the picture afterwards.
+    const set = this.panelSize()
+    const W = set ? set.w : this.W, H = set ? set.h : this.H
     const compact = !!options.compact
     const k = this.k = { u, compact, pad: (compact ? 5 : 8) * u, gap: (compact ? 5 : 8) * u, title: (compact ? 18 : 22) * u }
     const margin = options.margin * u
     this.plates = []; this.titles = []; this.rules = []; this.tabs = []
-    this.viewport = null; this.viewNow = null; this.wraps = 0; this.lines = 0
+    this.viewport = null; this.viewNow = null; this.wraps = 0; this.lines = 0; this.over = 0
+    this.hold = options.wrap === false || (options.fit === 'width' && !set)
+    this.columnsNow = this.columnsAt(W)
     for (const item of this.items) { item.hidden = false; item.view = null }
-    const R = { x: margin, y: margin, w: Math.max(40, W - 2 * margin), h: Math.max(40, H - 2 * margin) }
+    const [il, it, ir, ib] = set ? [0, 0, 0, 0] : this.inset
+    const R = { x: margin + il, y: margin + it, w: Math.max(40, W - 2 * margin - il - ir), h: Math.max(40, H - 2 * margin - it - ib) }
     // What is left of the picture for the scene: each thing along an edge moves that edge in.
     const free = { l: 0, t: 0, r: W, b: H }
 
     for (const box of root.items) {
       if (!box.dock || !this.shows(box)) continue
       const side = box.dock === 'left' || box.dock === 'right'
-      this.measure(box, side ? Math.min(R.w, box.wide ? box.wide * u : Math.max(R.w * 0.45, 120 * u)) : R.w)
+      const most = side ? Math.min(R.w, box.wide ? box.wide * u : Math.max(R.w * 0.45, 120 * u)) : R.w
+      box.folds = 1
+      while (this.measure(box, most).h > R.h + 0.5 && side && box.folds < 4) box.folds++
       const w = side ? box.m.w : R.w, h = side ? R.h : box.m.h
       const x = box.dock === 'right' ? R.x + R.w - w : R.x, y = box.dock === 'bottom' ? R.y + R.h - h : R.y
       this.lay(box, x, y, w, h)
@@ -1649,6 +1762,11 @@ class Panel {
       while (cut > 0 && (isBreak(kids[cut - 1]) || kids[cut - 1].full)) cut--
       if (kids.slice(0, cut).some((kid) => !isBreak(kid))) { body = kids.slice(0, cut); foot = kids.slice(cut) }
     }
+    // With very little height (a phone on its side) that scope is put away, so that the controls can be seen.
+    if (this.squeeze >= 2) {
+      for (const kid of foot) if (kid.full) this.hide(kid)
+      foot = foot.filter((kid) => !kid.full)
+    }
     const above = this.flow(head, room), below = this.flow(foot, room)
     const bodies = pages.length ? pages.map((page) => [page, this.flow(laid(page), room)]) : [[null, this.flow(body, room)]]
     const now = (bodies.find(([page]) => page === this.shown) || bodies[0])[1]
@@ -1684,15 +1802,19 @@ class Panel {
     // Where the plates are seen, on whole pixels so that what is drawn again at its edge leaves no seam.
     const snap = (v) => Math.round(v * this.ratio) / this.ratio
     const view = { x: F.x, y: snap(y), w: F.w, h: fits ? tall : snap(Math.max(40 * u, F.h - fixed)) }
+    this.seen = fits ? Infinity : view.h / u
     y = view.y
     const key = this.shown || root
     const max = Math.max(0, now.h - view.h)
     const scroll = clamp(this.scrolls.get(key) || 0, 0, max)
-    if (max > 0.5) this.viewNow = view
-    this.put(now, x, y - scroll, room, wide)
+    // Lines that are wider than the room even at the smallest scale allowed are moved from side to side.
+    const maxX = this.over > 0.5 ? this.over : 0, scrollX = clamp(this.pans.get(key) || 0, 0, maxX)
+    if (max > 0.5 || maxX) this.viewNow = view
+    this.put(now, x - scrollX, y - scroll, room, wide)
     this.viewNow = null
     // The bar stands just beyond the plates' right edge.
-    if (max > 0.5) this.viewport = { ...view, max, scroll, gutter, key, left: x + (room - wide) / 2, right: x + (room + wide) / 2 }
+    if (max > 0.5 || maxX) this.viewport = { ...view, max, scroll, maxX, scrollX, gutter, key, left: x + (room - wide) / 2, right: x + (room + wide) / 2 }
+    this.roomWide = room
     y += view.h + (view.h > 0 ? k.gap : 0)
     let end = y
     if (below.h) {
@@ -1718,30 +1840,50 @@ class Panel {
     }
     for (const [page] of bodies) if (page && page !== this.shown) this.hide(page)
 
-    // What was placed by hand: where it was put, in the size the design was drawn at when there is one.
-    const d = Array.isArray(options.design) ? options.design : options.design ? [options.design.width, options.design.height] : null
-    const s = d ? Math.min(W / d[0], H / d[1]) : 1
-    const ox = d ? (W - d[0] * s) / 2 : 0, oy = d ? (H - d[1] * s) / 2 : 0
-    this.designed = d ? [ox, oy, d[0] * s, d[1] * s] : null
-    const mine = { ...k }
-    if (d) { const fu = s * (options.scale || 1); this.k = { ...k, u: fu, pad: k.pad / u * fu, gap: k.gap / u * fu, title: k.title / u * fu } }
-    const across = (d ? d[0] * s : W) - 2 * margin - 2 * k.pad
+    // What was placed by hand: where it was put.
+    const across = W - 2 * margin - 2 * k.pad
     for (const item of this.items) {
       if (!item.at || item.items) continue
-      item.u = this.k.u * item.scaleOf()
+      item.u = u * item.scaleOf()
       const [w, h] = item.natural(item.u, Math.max(40, across), g)
       item.w = w; item.h = h
-      item.x = ox + item.at.x * s; item.y = oy + item.at.y * s
-      this.plates.push([item.x - this.k.pad / 2, item.y - this.k.pad / 2, w + this.k.pad, h + this.k.pad])
+      item.x = item.at.x; item.y = item.at.y
+      this.plates.push([item.x - k.pad / 2, item.y - k.pad / 2, w + k.pad, h + k.pad])
     }
     for (const box of [...this.items, ...this.boxes]) {
       if (!box.items || !box.at || !this.shows(box, true)) continue
-      const m = this.measure(box, box.wide ? box.wide * s : Math.max(40, (d ? d[0] * s : W) - box.at.x * s))
-      this.lay(box, ox + box.at.x * s, oy + box.at.y * s, m.w, box.tall ? Math.max(m.h, box.tall * s) : m.h)
+      const m = this.measure(box, box.wide ? box.wide * u : Math.max(40, W - box.at.x))
+      this.lay(box, box.at.x, box.at.y, m.w, box.tall ? Math.max(m.h, box.tall * u) : m.h)
     }
-    this.k = mine
     this.free = [free.l, free.t, Math.max(0, free.r - free.l), Math.max(0, free.b - free.t)]
+    this.designed = null
+    this.zoomed = 1
+    this.u = u
+    if (set) this.zoom(set)
     return { fits, lines: this.lines + this.wraps }
+  }
+  /** Put a panel that was laid out at its own size on the picture: everything s times bigger, from (ox, oy). */
+  zoom({ w, h, s, ox, oy }) {
+    const views = new Set()
+    const box = (thing) => { thing.x = ox + thing.x * s; thing.y = oy + thing.y * s; thing.w *= s; thing.h *= s }
+    for (const item of this.items) { box(item); if (!item.items) item.u *= s; if (item.view) views.add(item.view) }
+    for (const group of this.boxes) box(group)
+    for (const plate of this.plates) {
+      plate[0] = ox + plate[0] * s; plate[1] = oy + plate[1] * s; plate[2] *= s; plate[3] *= s
+      if (plate.clip) views.add(plate.clip)
+    }
+    for (const title of this.titles) { title.x = ox + title.x * s; title.y = oy + title.y * s; title.w *= s; title.size *= s; if (title.clip) views.add(title.clip) }
+    for (const rule of this.rules) { rule[0] = ox + rule[0] * s; rule[1] = oy + rule[1] * s; rule[2] = ox + rule[2] * s; rule[3] = oy + rule[3] * s; if (rule[4]) views.add(rule[4]) }
+    for (const tab of this.tabs) box(tab)
+    if (this.tabs.length) this.tabStrip = [ox + this.tabStrip[0] * s, oy + this.tabStrip[1] * s, this.tabStrip[2] * s, this.tabStrip[3] * s]
+    for (const view of views) box(view)
+    const v = this.viewport
+    if (v) { box(v); v.max *= s; v.scroll *= s; v.maxX *= s; v.scrollX *= s; v.gutter *= s; v.left = ox + v.left * s; v.right = ox + v.right * s }
+    const [fx, fy, fw, fh] = this.free
+    this.free = [ox + fx * s, oy + fy * s, fw * s, fh * s]
+    this.designed = [ox, oy, w * s, h * s]
+    this.zoomed = s
+    this.u *= s
   }
   /** A page that is not on show: nothing of it is drawn or felt. */
   hide(box) {
@@ -1761,18 +1903,21 @@ class Panel {
    */
   layout(quick) {
     const { options } = this
-    const usual = options.scale || (this.coarse ? FINGER_SCALE : 1)
-    const least = options.scale || !this.coarse ? usual * SMALLEST : 1
-    let u = this.u, squeeze = this.squeeze
+    // A panel of a set size is the same on every screen: a finger's screen does not make its controls bigger.
+    const set = !!this.panelSize()
+    const usual = options.scale || (this.coarse && !set ? FINGER_SCALE : 1)
+    const least = options.scale || !this.coarse || set ? usual * SMALLEST : 1
+    const hold = options.wrap === false || (options.fit === 'width' && !set)
+    let u = this.scale, squeeze = this.squeeze || 0
     if (!quick) {
       // Of the sizes at which all fits, the one that makes the fewest lines (a row stays a row if a little
       // smaller will keep it one), and of those the biggest. If none does, the same again with the keyboard
-      // and the scope above it less tall.
+      // and the scope above it less tall. Told not to wrap, there is nothing to choose: the usual size.
       const sizes = []
-      for (let step = 0; usual * (1 - 0.05 * step) > least + 1e-6; step++) sizes.push(usual * (1 - 0.05 * step))
-      sizes.push(least)
+      if (!hold) for (let step = 0; usual * (1 - 0.05 * step) > least + 1e-6; step++) sizes.push(usual * (1 - 0.05 * step))
+      sizes.push(hold ? usual : least)
       u = 0
-      for (squeeze of [false, true]) {
+      for (squeeze of [0, 1, 2]) {
         this.squeeze = squeeze
         let fewest = Infinity
         for (const size of sizes) {
@@ -1781,11 +1926,37 @@ class Panel {
         }
         if (u) break
       }
-      u ||= Math.max(least, usual * 0.9)
+      if (!u) {
+        // Nothing fits: the plates will be moved to be seen. The scope stays if that leaves room to see a plate and a half.
+        u = hold ? usual : Math.max(least, usual * 0.9)
+        this.squeeze = squeeze = 1
+        this.compose(u, 0)
+        if (this.seen < SEEN_LEAST) squeeze = 2
+      }
+      // ONE SCALE FOR THE WHOLE PANEL. A line that may not wrap and is too wide makes everything smaller until it
+      // fits the width, so a knob is the same size on every line. Not below `minScale` (by default, the smallest
+      // a finger can work): there the lines are left too wide, and are moved from side to side.
+      this.squeeze = squeeze
+      const floor = Math.min(u, options.minScale ?? (this.coarse ? FINGER_LEAST : MOUSE_LEAST))
+      // (Twice: once the plates have to be moved up and down, the bar beside them takes a little of the width.)
+      for (const barred of [false, true]) {
+        const bar = () => (barred ? (this.coarse ? 18 : 12) * u : 0)
+        if (barred && this.compose(u, 0).fits) break
+        this.compose(u, bar())
+        for (let tries = 0; tries < 6 && this.over > 0.5 && u > floor + 1e-6; tries++) {
+          u = Math.max(floor, u * this.roomWide / (this.roomWide + this.over) * 0.998)
+          this.compose(u, bar())
+        }
+      }
     }
-    this.u = u
-    this.squeeze = squeeze
+    this.scale = u
+    this.squeeze = squeeze || 0
     if (!this.compose(u, 0).fits) this.compose(u, (this.coarse ? 18 : 12) * u)
+  }
+  /** What the layout came to: the picture's width and height, the scale the controls are drawn at, and how many plates to a line were asked for. */
+  info() {
+    if (this.arrange) this.layout()
+    return { width: this.W, height: this.H, scale: Math.round(this.u * 1000) / 1000, columns: this.columnsNow || 0 }
   }
   /** The rectangle of the picture that no control is on, for the scene to draw in. */
   room() {
@@ -1844,8 +2015,15 @@ class Panel {
       this.ground()
       for (const item of this.items) this.paint(item, false)
       this.cover()
-      const free = this.free.map(Math.round)
-      if (free.join() !== this.freeSaid) { this.freeSaid = free.join(); this.roomNews = free }
+      // The rectangle no control is on, then the picture's width and height and the scale: said when any of them changes.
+      const now = this.info(), free = [...this.free.map(Math.round), now.width, now.height, now.scale]
+      if (free.join() !== this.freeSaid) {
+        const resized = free.slice(4).join() !== this.freeSaid.split(',').slice(4).join()
+        this.freeSaid = free.join()
+        this.roomNews = free
+        // A scene that arranges itself by the width is told when the picture changes size: layout({ onResize }).
+        if (resized && typeof this.options.onResize === 'function') this.options.onResize(now)
+      }
     } else if (this.stale.size) {
       g.setTransform(ratio, 0, 0, ratio, 0, 0)
       for (const item of this.stale) if (this.items.includes(item)) this.paint(item, true)
@@ -1943,6 +2121,7 @@ class Panel {
     }
     if (v.scroll > 0.5) shade(v.y, v.y + 16 * u)
     if (v.scroll < v.max - 0.5) shade(v.y + v.h, v.y + v.h - 16 * u)
+    if (v.max <= 0.5) return
     const bar = this.bar()
     rounded(g, bar.x, v.y, bar.w, v.h, bar.w / 2)
     g.fillStyle = THEME.plate
@@ -1964,9 +2143,9 @@ class Panel {
     let x = item.x, y = item.y, w = item.w, h = item.h
     if (v) {
       // On plates that can be moved, only the part inside where they are seen.
-      const top = Math.max(y, v.y), bottom = Math.min(y + h, v.y + v.h)
-      if (bottom <= top) return
-      y = top; h = bottom - top
+      const top = Math.max(y, v.y), bottom = Math.min(y + h, v.y + v.h), left = Math.max(x, v.x), right = Math.min(x + w, v.x + v.w)
+      if (bottom <= top || right <= left) return
+      y = top; h = bottom - top; x = left; w = right - left
     }
     // Cut on whole pixels: drawn again and again over itself, a soft edge would show as a line.
     const snap = (v) => Math.round(v * this.ratio) / this.ratio
@@ -1995,7 +2174,7 @@ class Panel {
     for (let i = this.items.length - 1; i >= 0; i--) {
       const item = this.items[i]
       if (!item.w || item.items || item.hidden || item.ghost) continue
-      if (item.view && (y < item.view.y || y >= item.view.y + item.view.h)) continue
+      if (item.view && (y < item.view.y || y >= item.view.y + item.view.h || x < item.view.x || x >= item.view.x + item.view.w)) continue
       if (x >= item.x && x < item.x + item.w && y >= item.y && y < item.y + item.h) return item
     }
     return null
@@ -2017,7 +2196,7 @@ class Panel {
     if (v && p.x >= v.x && p.x < v.x + v.w && p.y >= v.y && p.y < v.y + v.h && (!item || (item.view && SLIDES.has(item.kind)))) {
       if (this.scroller.held) return
       item = this.scroller
-      item.bar = p.x >= v.right && p.x < v.right + v.gutter
+      item.bar = v.max > 0.5 && p.x >= v.right && p.x < v.right + v.gutter
       // A press on the bar away from its thumb brings the thumb there.
       const bar = this.bar()
       if (item.bar && (p.y < bar.y || p.y > bar.y + bar.h)) this.scrollBy((p.y - bar.y - bar.h / 2) * (v.h + v.max) / v.h)
@@ -2148,17 +2327,30 @@ function api(panel) {
     grid: boxed('grid'),
     /** page("fx", () => { … }), or page("fx") and then its controls: a page of plates, turned to with a tab. page() ends the pages. */
     page: boxed('page'),
+    /** wrap(): if this line has to be split, here is where. Nothing happens while everything fits. */
+    wrap: () => panel.add('row', { soft: true }),
     /** spacer(20): that much room. spacer(): all the room that is left over, so what follows is pushed to the far end. */
     spacer: (size, options) => panel.add('spacer', isPlain(size) ? { ...size } : { ...options, size }),
     /**
-     * How it is all laid out: { at: "top", "bottom", "left" or "right", scale: 1.2, margin: 10, compact: true,
-     * dividers: true, plates: false, align: "center", backdrop: true, false or a colour, image: a picture behind
-     * the controls, design: [800, 480] (the size that x and y are measured in) }.
+     * How it is all laid out, each of these left out or given:
+     *   wrap: false                  every row stays one row; everything is drawn smaller until the widest fits the width
+     *   wrap: true                   every row() is a new line, and a row is split only when it does not fit
+     *   minScale: 0.8                told not to wrap, no smaller than this: wider rows are moved from side to side
+     *   columns: 3                   so many plates to a line; or by width, { phone: 1, tablet: 2, wide: 3 } or { 0: 1, 700: 3 }
+     *   size: [800, 480]             the panel is laid out at this size on every screen, then made to fit the picture whole;
+     *                                size: 800 is a width alone (as is fit: "width"): what does not fit is moved up and down
+     *   scale: 1.2                   everything bigger or smaller
+     *   at: "top", "bottom", "left" or "right", margin: 10, align: "center", compact: true, dividers: true, plates: false,
+     *   backdrop: true, false or a colour, image: a picture behind the controls, onResize: called when the picture changes size
+     * It gives back { width, height, scale, columns }: the picture's size and the scale the controls are drawn at now.
      */
     layout: (options) => {
-      Object.assign(panel.options, options)
-      if (options && 'image' in options) panel.skinned(options.image)
-      panel.arrange = true
+      if (options) {
+        Object.assign(panel.options, options)
+        if ('image' in options) panel.skinned(options.image)
+        panel.arrange = true
+      }
+      return panel.info()
     },
     /** The rectangle of the picture that no control is on: { x, y, width, height }. A scene draws in it. */
     room: () => panel.room(),
@@ -2235,8 +2427,9 @@ const column = (...args) => dials().column(...args)
 const grid = (...args) => dials().grid(...args)
 const page = (...args) => dials().page(...args)
 const spacer = (...args) => dials().spacer(...args)
+const wrap = () => dials().wrap()
 const layout = (options) => dials().layout(options)
 const room = () => dials().room()
 const over = (x, y) => dials().over(x, y)
 
-export { dials, dial, slider, button, toggle, select, keyboard, scope, meter, label, group, row, column, grid, page, spacer, layout, room, over, theme, version }
+export { dials, dial, slider, button, toggle, select, keyboard, scope, meter, label, group, row, column, grid, page, spacer, wrap, layout, room, over, theme, version }
