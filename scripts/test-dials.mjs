@@ -190,6 +190,23 @@ await drawn()
 const under = (c) => { let said = ""; const g = dials().panel.g, was = g.fillText; g.fillText = function (t, ...rest) { said = t; return was.call(this, t, ...rest) }; c.draw(g, c.u); g.fillText = was; return said }
 window.result = [small.names.length, usual.names.length, usual.names.every((n) => !n.whole), large.names.every((n) => n.w > usual.names[n.i].w), large.w > usual.w && usual.w > small.w, many.names.length, three.names.every((n) => n.whole), under(small), under(many), [small, usual, large, many, three].every((c) => c.x >= 0 && c.x + c.w <= width)]`,
     want: [0, 4, true, true, true, 0, true, 'cathedral hall', '1', true] },
+  { what: 'a target that says a setting has changed is asked about it again: a select keeps its choice while it is still there, a dial takes the new range, and a control that is gone is no longer told',
+    source: `const heard = new Set()
+const input = { names: ["all", "1", "2"], on: "2", low: 0, high: 10, at: 4,
+  describe(name) { return name === "device" ? { kind: "text", choices: this.names } : { min: this.low, max: this.high } },
+  get(name) { return name === "device" ? this.on : this.at }, set(name, value) { if (name === "device") this.on = value; else this.at = value },
+  onChange(fn) { heard.add(fn); return () => heard.delete(fn) }, say(name) { for (const fn of [...heard]) fn(name) } }
+const device = select("midi in", input, "device"), knob = rotary("also", input, "device"), level = dial("level", input, "level"), gone = dial("gone", input, "level")
+await drawn()
+const first = [device.choices, device.value, heard.size, device.w]
+gone.remove()
+input.names = ["all", "1", "2", "A very long keyboard name"]; input.say("device")
+await drawn()
+const grown = [device.choices.length, device.value, knob.choices.length, knob.value, device.w > first[3], level.max, heard.size]
+input.names = ["all", "1"]; input.on = "all"; input.low = 2; input.high = 3; input.say()
+await drawn()
+window.result = [...first.slice(0, 3), ...grown, device.choices, device.value, device.index, knob.value, level.min, level.max, level.value, input.on]`,
+    want: [['all', '1', '2'], '2', 4, 4, '2', 4, '2', true, 10, 3, ['all', '1'], 'all', 0, 'all', 2, 3, 3, 'all'] },
   { what: 'the library can be made from its text alone, as a host with no modules does (Python\'s page)',
     source: `const text = await (await fetch("/dials.js")).text()
 const made = new Function(text.replace("export {", "return {"))()
@@ -722,6 +739,15 @@ keyboard(lead, { octave: 3, octaves: 2 })
 window.sizes = []
 window.told = layout({ onResize: (now) => window.sizes.push([now.width, now.height]) })`,
 }
+MODES.fill = LEAD + 'layout({ fit: "width" })\n' + OWNER
+MODES.capped = LEAD + 'layout({ fit: "width", maxScale: 1.2 })\n' + OWNER
+// More than twice what fits on a phone: plates of dials, one of sliders, and a keyboard that says what it plays.
+MODES.tall = LEAD + `window.played = []
+for (const name of ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen"]) {
+  group(name, () => { dial("a", 0, 1, 0.5); dial("b", 0, 1, 0.5); dial("c", 0, 1, 0.5) })
+  if (name === "two") group("sliders", () => { slider("across", 0, 1, 0.5); slider("other", 0, 1, 0.5) })
+}
+keyboard({ octave: 4, octaves: 1, onNoteOn: (note) => window.played.push(note) })`
 const WRITTEN = [['oscillator'], ['unison', 'filter'], ['shape'], ['delay', 'reverb']]
 let drawnScale = 0
 let drawnAt = null     // where everything of the panel of a set size is, in its own 900 by 640: the same on every screen
@@ -744,6 +770,15 @@ async function modeCases(page, name, size, said, shot) {
   if (width < 500) {
     const small = await lay(page, MODES.insist)
     check(name, said('minScale: 0 insists: as small as it takes to fit the width, with no moving sideways'), [faults(small, { least: 0, fingers: false }), plateLines(small), right(small) <= width + 0.5, !small.view || !small.view.maxX, small.u < 0.8], [[], WRITTEN, true, true, true])
+  }
+
+  // fit: "width" fills the width whichever way: bigger where there is room, as far as maxScale.
+  if (width >= 1100) {
+    const big = await lay(page, MODES.fill), capped = await lay(page, MODES.capped), usual = big.coarse ? 1.15 : 1
+    check(name, said('fit: "width" draws a panel bigger to fill a wide picture, its rows as written, no bigger than maxScale and no bigger than fits the height'),
+      [faults(big, { least: 0.5 }), plateLines(big), (size === 'full' ? big.u > usual + 0.1 : big.u >= usual - 1e-6) && big.u <= 1.6 + 1e-6, !big.view, capped.u <= 1.2 + 1e-6 && capped.u >= usual - 1e-6, new Set(dials(big).map((c) => Math.round(c.whole[2] * 10))).size],
+      [[], WRITTEN, true, true, true, 1])
+    await shot('fill')
   }
 
   // minScale: no smaller than that. Rows that are still too wide are moved from side to side.
@@ -796,6 +831,74 @@ async function modeCases(page, name, size, said, shot) {
   }
 }
 
+
+/** When there is more than fits, the plates are moved to see the rest: that is what a panel does by itself. */
+async function scrollCases(page, name, size, said, shot) {
+  const { width } = SIZES[size]
+  let r = await lay(page, MODES.tall)
+  const values = () => page.evaluate('dials().panel.items.filter((c) => c.kind === "dial" || c.kind === "slider").map((c) => c.value).join()').catch(() => page.evaluate(() => document.querySelector('#s canvas')[Symbol.for('dials.panel')].items.filter((c) => c.kind === 'dial' || c.kind === 'slider').map((c) => c.value).join()))
+  const whole = (r) => r.controls.filter((c) => c.at && Math.abs(c.at[3] - c.whole[3]) < 0.5 && c.kind !== 'keyboard').map((c) => c.id)
+  const keys = (r) => r.controls.find((c) => c.kind === 'keyboard')
+  const all = r.controls.filter((c) => c.kind !== 'keyboard').map((c) => c.id)
+  const first = r
+  // Every control can be reached: the wheel, a view at a time, to the end.
+  const reached = new Set(whole(r))
+  await page.mouse.move(width / 2, r.view.y + 30)
+  for (let turn = 0; turn < 12 && r.view.scroll < r.view.max - 0.5; turn++) { await page.mouse.wheel(0, r.view.h * 0.6); r = await survey(page); for (const id of whole(r)) reached.add(id) }
+  check(name, said('a panel more than twice the height of its room is moved to see the rest: every control can be reached, and the keyboard stays where it is'),
+    [first.error || faults(first), first.view.max > first.view.h, all.filter((id) => !reached.has(id)), keys(r).whole, r.view.scroll === r.view.max], [[], true, [], keys(first).whole, true])
+  // A drag on a dial turns the dial, and moves nothing.
+  const before = r.view.scroll
+  check(name, said('there, a drag on a dial turns the dial and does not move the plates'), [await turn(page, r, ['a', 'b', 'c']), (await survey(page)).view.scroll], [0.25, before])
+  // A drag from the room between two plates moves them, right across dials, and changes nothing.
+  r = await survey(page)
+  const told = await values()
+  const gapAt = (r) => { const p = r.plates.filter((plate) => plate.at[3] > 60 && plate.at[1] > r.view.y + 10 && plate.at[1] + plate.at[3] <= r.view.y + r.view.h + 1)[0]; return [p.at[0] + p.at[2] / 2, p.at[1] - 4] }
+  let from = gapAt(r)
+  const over = await page.evaluate(([x, y]) => { const p = document.querySelector('#s canvas')[Symbol.for('dials.panel')]; return [p.api.over(x, y), !!p.under(x, y)] }, from)
+  await finger(page, 'pointerdown', 71, from)
+  for (let step = 1; step <= 6; step++) await finger(page, 'pointermove', 71, [from[0], from[1] + 30 * step])
+  await page.waitForTimeout(150)
+  await finger(page, 'pointerup', 71, [from[0], from[1] + 180])
+  let moved = await survey(page)
+  check(name, said('a drag that starts between two plates moves them, passes over dials without turning one, and the scene is not given it'),
+    [over, Math.round(before - moved.view.scroll), await values() === told], [[true, false], 180, true])
+  // The keyboard plays while the plates are moved away from the top.
+  const k = keys(moved).whole
+  await finger(page, 'pointerdown', 72, [k[0] + k[2] * 0.5 / 8, k[1] + k[3] * 0.9]); await finger(page, 'pointerup', 72, [k[0] + k[2] * 0.5 / 8, k[1] + k[3] * 0.9])
+  check(name, said('and the keyboard plays while they are moved'), [await page.evaluate('window.played'), moved.view.scroll > 0], [[60], true])
+  // A slider that lies across: a finger going up or down it means the plates, a finger going along it means the slider.
+  await page.mouse.move(width / 2, moved.view.y + 30); await page.mouse.wheel(0, -100000); await page.mouse.wheel(0, 150)
+  r = await survey(page)
+  const slide = r.controls.find((c) => c.kind === 'slider' && c.label === 'across')
+  const on = [slide.whole[0] + slide.whole[2] * 0.3, slide.whole[1] + slide.whole[3] * 0.75]
+  const value = () => page.evaluate((id) => document.querySelector('#s canvas')[Symbol.for('dials.panel')].find(id).value, slide.id)
+  await finger(page, 'pointerdown', 73, on)
+  for (let step = 1; step <= 4; step++) await finger(page, 'pointermove', 73, [on[0] + 2, on[1] - 20 * step])
+  await page.waitForTimeout(150); await finger(page, 'pointerup', 73, [on[0] + 2, on[1] - 80])
+  const up = [await value(), Math.round((await survey(page)).view.scroll - r.view.scroll)]
+  r = await survey(page)
+  const again = r.controls.find((c) => c.id === slide.id).whole, start = [again[0] + again[2] * 0.3, again[1] + again[3] * 0.75]
+  await finger(page, 'pointerdown', 74, start)
+  for (let step = 1; step <= 4; step++) await finger(page, 'pointermove', 74, [start[0] + 15 * step, start[1] - 1])
+  await finger(page, 'pointerup', 74, [start[0] + 60, start[1] - 1])
+  check(name, said('a finger going up a slider that lies across moves the plates, and one going along it moves the slider'),
+    [up, await value() !== 0.5, Math.round((await survey(page)).view.scroll - r.view.scroll)], [[0.5, 80], true, 0])
+  // Let go while moving, the plates carry on a little way.
+  await page.mouse.move(width / 2, r.view.y + 30); await page.mouse.wheel(0, -100000)
+  r = await survey(page)
+  from = gapAt(r)
+  await finger(page, 'pointerdown', 75, from)
+  for (let step = 1; step <= 4; step++) { await finger(page, 'pointermove', 75, [from[0], from[1] - 30 * step]); await page.waitForTimeout(16) }
+  await finger(page, 'pointerup', 75, [from[0], from[1] - 120])
+  const let_go = (await survey(page)).view.scroll
+  await page.waitForTimeout(2200)
+  const rest = (await survey(page)).view.scroll
+  await page.waitForTimeout(200)
+  check(name, said('let go while moving, the plates carry on a little way and come to rest'), [let_go >= 110, rest > let_go + 10, (await survey(page)).view.scroll === rest], [true, true, true])
+  await shot('tall')
+}
+
 async function layoutCases(browser, name, size) {
   const { width, height, touch } = SIZES[size]
   const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch, isMobile: touch && name === 'chromium', deviceScaleFactor: 1 })
@@ -828,7 +931,7 @@ async function layoutCases(browser, name, size) {
     // More than fits: a finger on a heading moves the plates, and a dial that was moved still keeps to the finger.
     const head = r.controls.find((c) => c.heading && c.at && c.at[3] > 10)
     const from = [head.at[0] + 40, head.at[1] + head.at[3] / 2]
-    await finger(page, 'pointerdown', 31, from); await finger(page, 'pointermove', 31, [from[0], from[1] - 60]); await finger(page, 'pointermove', 31, [from[0], from[1] - 130]); await finger(page, 'pointerup', 31, [from[0], from[1] - 130])
+    await finger(page, 'pointerdown', 31, from); await finger(page, 'pointermove', 31, [from[0], from[1] - 60]); await finger(page, 'pointermove', 31, [from[0], from[1] - 130]); await page.waitForTimeout(150); await finger(page, 'pointerup', 31, [from[0], from[1] - 130])
     const moved = await survey(page)
     check(name, said('what does not fit is moved with a finger, and nothing is drawn tiny'), [faults(moved), Math.round(moved.view.scroll), moved.view.max > 0, moved.u >= (moved.coarse ? 1 : 0.8)], [[], Math.round(Math.min(130, r.view.max)), true, true])
     check(name, said('a dial on plates that were moved keeps to the finger'), await turn(page, moved, ['sub', 'spread', 'resonance', 'feedback', 'size', 'width']), 0.25)
@@ -840,6 +943,7 @@ async function layoutCases(browser, name, size) {
     check(name, said('it all fits, and nothing is drawn tiny'), [r.controls.every((c) => c.at && c.at[3] === c.whole[3]), r.u >= (r.coarse ? 1 : 0.8)], [true, true])
   }
   await modeCases(page, name, size, said, shot)
+  if (size === 'phone' || size === 'small') await scrollCases(page, name, size, said, shot)
 
   // The owner's second writing of it, a row() after every group: the plates still stand side by side to fill the width.
   r = await lay(page, LAID.rows)
