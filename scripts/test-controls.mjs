@@ -407,6 +407,25 @@ for (const name of ['chromium', 'webkit']) {
       check(name, `examples/${file} is played from the computer's keys`, errors, [])
     } else if (SHOTS) await page.screenshot({ path: join(ROOT, 'shots', `${name}-${file.replace('.js', '')}.png`) })
   }
+
+  // A touch screen the size of a tablet: the controls are made bigger for fingers, and a real tap plays a key and flips a switch.
+  if (name === 'chromium') {
+    const tablet = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, isMobile: true })
+    const touch = await tablet.newPage()
+    await touch.goto(`${at}/full.html`)
+    const began = await play(touch, TOP + `const log = []
+window.t = { g: toggle("mute"), k: keyboard({ octave: 4, octaves: 2, onNoteOn: (note) => log.push(note) }), log, api: controls() }
+await drawn()
+window.result = "ready"`)
+    let got = began
+    if (began === 'ready') {
+      await touch.touchscreen.tap(...await spot(touch, 'k', 0.5 / 15, 0.9))
+      await touch.touchscreen.tap(...await spot(touch, 'g'))
+      got = await read(touch, '[t.api.panel.coarse, t.api.panel.u, t.log, t.k.notes, t.g.on, t.k.h > 150, getComputedStyle(document.querySelector("#s canvas")).touchAction]')
+    }
+    check(name, 'on a touch screen the controls are bigger, and a tap plays a key and flips a switch', got, [true, 1.15, [60], [], true, true, 'none'])
+    await tablet.close()
+  }
   await browser.close()
 }
 server.close()
