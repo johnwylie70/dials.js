@@ -105,6 +105,17 @@ const first = [c.unit, c.log, text(c), a.unit, text(a), text(p)]
 a.value = 2.5; c.value = 5000
 window.result = [...first, text(a), text(c)]`,
     want: ['Hz', true, '440 Hz', 's', '0.010 s', '0.5', '2.50 s', '5.00 kHz'] },
+  { what: 'a canvas another library laid over the scene (an effects layer, a scene transition) is not taken for a second scene, and a plain one is',
+    source: `for (const name of ["effectsLayer", "sceneTransition"]) { const c = document.createElement("canvas"); c.dataset[name] = ""; canvas.after(c) }
+const d = dial("a", 0, 1, 0.5)
+await drawn()
+const plain = document.createElement("canvas")
+canvas.after(plain)
+let said = "no complaint"
+try { dial("b", 0, 1) } catch (e) { said = e.message.slice(0, 30) }
+plain.remove()
+window.result = [d.value, said]`,
+    want: [0.5, 'There is more than one canvas '] },
   { what: 'controls line up in rows inside the picture without overlapping, and the keyboard is along the bottom',
     source: `const made = [dial("a", 0, 1), dial("b", 0, 1), slider("c", 0, 1), slider("d", 0, 1, { vertical: true }), button("go"), toggle("t"), select("s", ["one", "two"]), meter(), scope(), dial("e", 0, 1)]
 const piano = keyboard()
