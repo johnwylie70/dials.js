@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed: a select or rotary did not follow a choice changed in code when its target reads the choice back by name (`lead.wave = "sine"`). It now takes a place in the list, a name in any case, or `false` and `true` for two choices, and says nothing back to the target.
 - The keyboard is the instrument and keeps its height. When the plates, the scope and the keyboard do not all fit, the scope is made shorter (no less than 56 points, and it is given back any height left over), and if that is not enough the plates are moved under a scope and a keyboard that stay put. Only where that would leave hardly any room to see the plates does the keyboard give up height, and only on a picture under 480 points tall (a phone on its side) is the scope put away, which is said once in the console. A height given to `keyboard` is kept to. On a panel with height to spare, the scope takes it first and then the keyboard, up to 190 points.
 - A page inside another's frame no longer keeps the screen's safe edges clear (it was told of them though it was nowhere near them, which left an empty band at the top).
 - A dial turned by ratio may start at 0: `describe()` giving `{ min: 0, log: true }` puts 0 at the bottom of the dial, and `logFrom` says where the turn starts above it. `labels: { 0: "auto" }` (from `describe()`, or as an option) shows a name in place of a value; `describe()` may also give `format(value)`.

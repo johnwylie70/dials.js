@@ -345,7 +345,7 @@ A control can be tied to anything. No library is named: a target is known by wha
 | `samples()` | Its latest output, numbers from -1 to 1: a scope draws it. |
 | `level()` | How loud it is now, from 0 to 1, or `[left, right]`: a meter shows it. |
 
-A target that is changed some other way (by the scene's code, by a song) moves its controls. The Python spellings (`note_on`, `on_change`) are understood too.
+A target that is changed some other way (by the scene's code, by a song) moves its controls, and nothing is said back to it. A select or rotary takes a choice read back by its place in the list, by its name (in any case, or by another name given in `describe().aliases`, `{ sawtooth: "saw" }`), or, of two choices, as `false` and `true`. The Python spellings (`note_on`, `on_change`) are understood too.
 
 ## How it is made
 

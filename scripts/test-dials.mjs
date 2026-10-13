@@ -232,6 +232,24 @@ d.slide(0.52); const mid = d.value
 z.value = 1; own.slide(1)
 window.result = [...first, still, least, most, Math.round(mid * 100) / 100, text(d), verb.values.decay === d.value, d.toPos(0.02) === 1, text(z), text(own)]`,
     want: [0, 0, 'auto', true, 0.02, '0.50', 'off', 0, 0.02, 20, 0.63, '0.632 s', true, false, 'huge', '10.0!'] },
+  { what: 'a select and a rotary follow a choice changed in code, whether the target reads it back by its place, by its name (in any case, or by another it answers to) or as true and false, and say nothing back; a dial and a slider follow a number as before',
+    source: `const sets = []
+const make = (read) => ({ wave: 2, on: 1, cutoff: 500,
+  describe: (name) => ({ wave: { kind: "choice", choices: "sine|triangle|saw|square", aliases: { sawtooth: "saw" } }, on: { kind: "choice", choices: "off|on" }, cutoff: { min: 20, max: 2000 } })[name],
+  get(name) { return name === "wave" ? read(this.wave) : name === "on" ? (read === byName ? !!this.on : this.on) : this.cutoff }, set(name, value) { sets.push(name); this[name] = value } })
+const byName = (i) => ["sine", "triangle", "saw", "square"][i], byPlace = (i) => i
+const named = make(byName), placed = make(byPlace), heard = []
+const all = [select("a", named, "wave", { onChange: (v) => heard.push(v) }), rotary("b", named, "wave", { onChange: (v) => heard.push(v) }), select("c", placed, "wave"), rotary("d", placed, "wave")]
+const flags = [select("e", named, "on"), rotary("f", placed, "on")], knob = dial("g", named, "cutoff"), bar = slider("h", placed, "cutoff")
+await drawn()
+const first = [all.map((c) => c.value).join(), flags.map((c) => c.value).join()]
+named.wave = 0; placed.wave = 3; named.on = 0; placed.on = 0; named.cutoff = 900; placed.cutoff = 40
+await drawn()
+const second = [all.map((c) => c.value).join(), all.map((c) => c.index).join(), flags.map((c) => c.value).join(), knob.value, bar.value]
+named.get = (name) => (name === "wave" ? "SAWTOOTH" : name === "on" ? true : 900)
+await drawn()
+window.result = [...first, ...second, all[0].value, all[1].index, flags[0].value, sets, heard]`,
+    want: ['saw,saw,saw,saw', 'on,on', 'sine,sine,square,square', '0,0,3,3', 'off,off', 900, 40, 'saw', 2, 'on', [], []] },
   { what: 'the library can be made from its text alone, as a host with no modules does (Python\'s page)',
     source: `const text = await (await fetch("/dials.js")).text()
 const made = new Function(text.replace("export {", "return {"))()
