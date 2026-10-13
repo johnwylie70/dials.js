@@ -146,9 +146,11 @@ const first = [lane.value, lane.steps[6], lane.length, gate.value.map((v) => Mat
 lane.value = [1, 0, 0.5, true]; gate.put(1, 3 / 9); arp.value = [1, 0, "2'", { note: 3, octave: -1, accent: true, length: 6 }, "~4"]; seq.put("snare", 0, true); seq.pattern = "backbeat"
 const set = [lane.text, lane.length, gate.text, arp.text, arp.length, seq.get("kick", 0), seq.text.split("\\n")[1]]
 gate.text = "pump"; arp.text = "acid"; arp.length = 6
-window.result = [...first, ...set, gate.text, gate.length, arp.text, arp.rows]`,
+// A gate's text has no accents: an X handed to one is a step that is on, and no more. A lane's has.
+const plain = gatePattern("plain", "X.x|x"), marked = steps("marked", "X.x|x")
+window.result = [...first, ...set, gate.text, gate.length, arp.text, arp.rows, plain.text, plain.steps[0].accent, marked.text]`,
     want: [[1, 0, 0, 1, 1, 0, 1, 0], { on: true, level: 1, accent: true }, 8, [9, 0, 5, 0, 9, 0, 0, 3], 'x.5.x..3', 8, "1 - 3 2 _ 1^ ~3 5':4", { note: 0, octave: 0, tie: true, accent: false, slide: false, length: 0 }, { note: 5, octave: 1, tie: false, accent: false, slide: false, length: 4 }, true, 0,
-      [[1, 0, 0, 0, 1, 0, 0, 0], [0, 0, 1, 0, 0, 0, 1, 0]], 'x...x...\n..X...x.', true, 'x.5x', 4, 'x35.x..3', "1 - 2' 3,^:6 ~4", 5, 1, '....X...', '2468246824682468', 16, "1^ 1 ~3 - 1' ~1", 8] },
+      [[1, 0, 0, 0, 1, 0, 0, 0], [0, 0, 1, 0, 0, 0, 1, 0]], 'x...x...\n..X...x.', true, 'x.5x', 4, 'x35.x..3', "1 - 2' 3,^:6 ~4", 5, 1, '....X...', '2468246824682468', 16, "1^ 1 ~3 - 1' ~1", 8, 'x.xxx', false, 'X.xx'] },
   { what: 'a pattern tied to a target is found by a synth\'s names for it, read and written as text, expanded from a name, follows the target, lights the step the target says is sounding, and has the target\'s named patterns and settings made beside it',
     source: `const P = { gatePattern: { kind: "pattern", steps: 24, patterns: { mine: "xx..", pump: "2468" } }, gateDepth: { min: 0, max: 1 }, gateRate: { min: 0.25, max: 16 }, gateStereo: { kind: "bool" }, arpPattern: { kind: "pattern", steps: 32 } }
 // As a synth keeps them: get() is always the text ("" for none), and the step that is sounding is a setting to read.
