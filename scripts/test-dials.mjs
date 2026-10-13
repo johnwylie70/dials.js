@@ -357,6 +357,20 @@ window.count = () => document.querySelectorAll("#s canvas").length`,
     want: [[2, 1], 1, 2] },
 ]
 
+// Nothing reaches the speakers: Chromium is launched muted, and in every page (WebKit has no such switch)
+// what a sound would be sent to is a gain of nothing in front of the real output.
+const SILENT = () => {
+  for (const Kind of [window.AudioContext, window.webkitAudioContext]) {
+    if (!Kind) continue
+    const real = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, 'destination').get
+    const quiet = new WeakMap()
+    Object.defineProperty(Kind.prototype, 'destination', { configurable: true, get() {
+      if (!quiet.has(this)) { const gain = this.createGain(); gain.gain.value = 0; gain.connect(real.call(this)); quiet.set(this, gain) }
+      return quiet.get(this)
+    } })
+  }
+}
+
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 let failed = 0
 const check = (browser, what, got, want) => {
@@ -371,8 +385,9 @@ if (SHOTS) await mkdir(join(ROOT, 'shots'), { recursive: true })
 
 for (const name of ['chromium', 'webkit']) {
   let browser
-  try { browser = await playwright[name].launch() } catch (e) { console.log(`     ${name}: not installed, skipped`); continue }
+  try { browser = await playwright[name].launch(name === 'chromium' ? { args: ['--mute-audio'] } : {}) } catch (e) { console.log(`     ${name}: not installed, skipped`); continue }
   const context = await browser.newContext({ viewport: { width: 900, height: 700 } })
+  await context.addInitScript(SILENT)
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (e) => errors.push(String(e)))
@@ -421,6 +436,7 @@ for (const name of ['chromium', 'webkit']) {
   // A touch screen the size of a tablet: the controls are made bigger for fingers, and a real tap plays a key and flips a switch.
   if (name === 'chromium') {
     const tablet = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, isMobile: true })
+    await tablet.addInitScript(SILENT)
     const touch = await tablet.newPage()
     await touch.goto(`${at}/full.html`)
     const began = await play(touch, TOP + `const log = []
