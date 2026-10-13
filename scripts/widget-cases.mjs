@@ -5,12 +5,12 @@
  */
 
 /** The names a scene is given besides the first part's. */
-export const MORE = 'const { number, stepper, textBox, readout, checkbox, choose, radio, dropdown, xyPad, colourPicker, colorPicker, progress, light, busy, rangeSlider, fader } = lib\n'
+export const MORE = 'const { number, stepper, textBox, readout, checkbox, choose, radio, dropdown, xyPad, colourPicker, colorPicker, progress, light, busy, rangeSlider, fader, joystick, dpad, actionButton } = lib\n'
 
 /** The kinds of this part: at every size each is asked to draw, and must keep to its own box. */
-export const MORE_KINDS = ['number', 'textBox', 'readout', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'progress', 'light', 'busy', 'rangeSlider', 'fader']
+export const MORE_KINDS = ['number', 'textBox', 'readout', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'progress', 'light', 'busy', 'rangeSlider', 'fader', 'joystick', 'dpad', 'actionButton']
 /** Those a finger works: on a touch screen none is smaller than a finger. */
-export const MORE_TOUCHED = ['number', 'textBox', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'rangeSlider', 'fader']
+export const MORE_TOUCHED = ['number', 'textBox', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'rangeSlider', 'fader', 'joystick', 'dpad', 'actionButton']
 
 export const MORE_CASES = [
   { what: 'a number box is a number: it counts in ones, or in tenths over a small range, and keeps to its range and its step',
@@ -115,6 +115,11 @@ loop.start = 0.5
 await drawn()
 window.result = [...first, crossed, loop.end, b.low]`,
     want: [20, 80, [20, 80], 0.2, 0.9, 2, 's', [0, 10], true, 0.7, 1.4, [10, 30], 1.5, 0.5] },
+  { what: 'a joystick and a pad of arrows are at rest until they are pushed, and a round button is a button',
+    source: `const stick = joystick(), pad = dpad("arrows", { ways: 4 }), fire = actionButton("A")
+await drawn()
+window.result = [stick.x, stick.y, stick.distance, stick.value, pad.left, pad.right, pad.up, pad.down, pad.x, pad.y, pad.ways, fire.held, fire.pressed, stick.kind, typeof stick.control.w, fire.w === fire.h]`,
+    want: [0, 0, 0, [0, 0], false, false, false, false, 0, 0, 4, false, false, 'joystick', 'number', true] },
 ]
 
 /** What is being typed into, and where it is on the page. */
@@ -329,6 +334,66 @@ window.t = { r: rangeSlider("price", 0, 100, [20, 80], { size: 200, onChange: (l
       return [low, stopped, high, await read(page, 'Math.round(t.f.value)')]
     },
     want: [[50, 80], [80, 80], [80, 100, [80, 100]], 60] },
+  { what: 'a joystick follows a thumb, no further than its rim, and springs back when it is let go; another finger presses a round button meanwhile; and one that floats appears where the thumb lands',
+    setup: `const heard = []
+const stick = joystick({ onChange: (x, y) => heard.push([x, y]) }), fire = actionButton("A"), flo = joystick({ floating: true })
+window.t = { c: stick.control, stick, fire, f: flo.control, flo, heard }`,
+    async act(page, { spot, read, finger }) {
+      const mid = await spot(page, 'c')
+      await finger(page, 'pointerdown', 11, mid)
+      const still = await read(page, 't.stick.value')
+      const reach = await read(page, 't.c.shape(t.c.u).reach')
+      await finger(page, 'pointermove', 11, [mid[0] + reach / 2, mid[1]])
+      const half = await read(page, '[t.stick.x, t.stick.y, t.stick.distance, t.stick.angle].map((n) => Math.round(n * 100) / 100)')
+      await finger(page, 'pointermove', 11, [mid[0], mid[1] - 400])
+      const up = await read(page, '[t.stick.x, t.stick.y, t.stick.distance, Math.round(t.stick.angle * 100)]')
+      const a = await spot(page, 'fire')
+      await finger(page, 'pointerdown', 12, a)
+      const both = await read(page, '[t.fire.held, t.c.held, t.stick.y]')
+      await finger(page, 'pointerup', 12, a); await finger(page, 'pointerup', 11, [mid[0], mid[1] - 400])
+      const let_go = await read(page, '[t.stick.value, t.fire.pressed, t.heard.length, t.heard.at(-1)]')
+      const land = await spot(page, 'f', 0.3, 0.6)
+      await finger(page, 'pointerdown', 11, land)
+      const landed = await read(page, '(() => { const s = t.f.shape(t.f.u), b = document.querySelector("#s canvas").getBoundingClientRect(); return [Math.round(b.left + s.x), Math.round(b.top + s.y), t.flo.value] })()')
+      await finger(page, 'pointermove', 11, [land[0] + 500, land[1]])
+      const right = await read(page, 't.flo.x')
+      await finger(page, 'pointerup', 11, land)
+      return [still, half, up, both, let_go, landed.join() === [...land.map(Math.round), 0, 0].join(), right, await read(page, 't.flo.value')]
+    },
+    want: [[0, 0], [0.5, 0, 0.5, 0], [0, -1, 1, -157], [true, true, -1], [[0, 0], true, 3, [0, 0]], true, 1, [0, 0]] },
+  { what: 'a pad of arrows says which are pressed as a thumb slides round it, two at once between them (or one, told four ways), and one told to be keys holds the arrow keys down for the scene, as a round button holds its key',
+    setup: `const pad = dpad({ asKeys: true }), four = dpad({ ways: 4, asKeys: "wasd" }), jump = actionButton("jump", { key: "space" }), n = number("n", 0, 9, 5)
+const downs = []
+function onKeyDown(key) { downs.push(key) }
+window.t = { c: pad.control, pad, d: four.control, four, jump, n, downs, keys: () => [...keys].sort() }`,
+    async act(page, { spot, read, finger, settle }) {
+      // The number box is touched first: it has the keys, and must not take the ones the pad presses for the scene.
+      await page.mouse.click(...await spot(page, 'n', 0.5, 0.1))
+      const at = (name, fx, fy) => spot(page, name, fx, fy)
+      await finger(page, 'pointerdown', 11, await at('c', 0.12, 0.5))
+      await settle(page)
+      const left = await read(page, '[t.pad.left, t.pad.right, t.pad.up, t.pad.down, t.pad.x, t.pad.y, t.keys()]')
+      await finger(page, 'pointermove', 11, await at('c', 0.15, 0.15))
+      await settle(page)
+      const upLeft = await read(page, '[t.pad.left, t.pad.up, t.pad.x, t.pad.y, t.keys()]')
+      await finger(page, 'pointermove', 11, await at('c', 0.5, 0.5))
+      const middle = await read(page, 't.pad.value')
+      await finger(page, 'pointermove', 11, await at('c', 0.5, 0.9))
+      await finger(page, 'pointerdown', 12, await at('jump'))
+      await settle(page)
+      const downAndJump = await read(page, '[t.pad.down, t.pad.y, t.keys()]')
+      await finger(page, 'pointerup', 11, await at('c', 0.5, 0.9)); await finger(page, 'pointerup', 12, await at('jump'))
+      await settle(page)
+      const none = await read(page, '[t.pad.value, t.keys()]')
+      await finger(page, 'pointerdown', 11, await at('d', 0.15, 0.15))
+      const one = await read(page, 'Math.abs(t.four.x) + Math.abs(t.four.y)')
+      await finger(page, 'pointermove', 11, await at('d', 0.9, 0.5))
+      await settle(page)
+      const wasd = await read(page, '[t.four.right, t.keys()]')
+      await finger(page, 'pointerup', 11, await at('d', 0.9, 0.5))
+      return [left, upLeft, middle, downAndJump, none, one, wasd, await read(page, '[t.n.value, t.downs.includes("ArrowLeft") && t.downs.includes(" ")]')]
+    },
+    want: [[true, false, false, false, -1, 0, ['ArrowLeft']], [true, true, -1, -1, ['ArrowLeft', 'ArrowUp']], [0, 0], [true, 1, [' ', 'ArrowDown']], [[0, 0], []], 1, [true, ['d']], [5, true]] },
 ]
 
 /** Scenes laid out at every size of screen: each must be whole, apart, in the picture and big enough for a finger. */
@@ -353,6 +418,9 @@ progress("loading", 0.4); light("ready", true); light("warn", "red"); busy("work
 row()
 label("mix")
 rangeSlider("price", 0, 100, [20, 80]); fader("vol", 0, 1, 0.7); fader("pan", -1, 1, 0.25)`,
+  // A game's controls in a strip along the bottom, with the scene in the room that is left.
+  games: `group({ at: "bottom" }, () => { joystick(); dpad(); spacer(); actionButton("B", { size: "small" }); actionButton("A") })
+function draw() { background("#16324f"); const r = room(); rect(r.x, r.y, r.width, r.height, "#1f5f8b") }`,
 }
 
 /** In the page: every control of these kinds is drawn alone on a clear canvas, and what it painted is measured against its box. */
