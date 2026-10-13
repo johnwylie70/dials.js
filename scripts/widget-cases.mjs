@@ -5,12 +5,12 @@
  */
 
 /** The names a scene is given besides the first part's. */
-export const MORE = 'const { number, stepper, textBox, readout } = lib\n'
+export const MORE = 'const { number, stepper, textBox, readout, checkbox, choose, radio, dropdown } = lib\n'
 
 /** The kinds of this part: at every size each is asked to draw, and must keep to its own box. */
-export const MORE_KINDS = ['number', 'textBox', 'readout']
+export const MORE_KINDS = ['number', 'textBox', 'readout', 'checkbox', 'choose', 'radio', 'dropdown']
 /** Those a finger works: on a touch screen none is smaller than a finger. */
-export const MORE_TOUCHED = ['number', 'textBox']
+export const MORE_TOUCHED = ['number', 'textBox', 'checkbox', 'choose', 'radio', 'dropdown']
 
 export const MORE_CASES = [
   { what: 'a number box is a number: it counts in ones, or in tenths over a small range, and keeps to its range and its step',
@@ -60,6 +60,22 @@ a.value = "Go"
 await drawn()
 window.result = [wide > narrow + 80, a.w === wide, a.text]`,
     want: [true, true, 'Go'] },
+  { what: 'a checkbox is true or false, and choose, radio and dropdown are one of a list, each tied to a target as a toggle and a select are',
+    source: `const synth = { values: { on: 1, wave: 2 }, describe: (name) => ({ on: { kind: "bool" }, wave: { kind: "choice", choices: "sine|saw|square" } })[name], get(name) { return this.values[name] }, set(name, value) { this.values[name] = value } }
+const a = checkbox("sound", true), b = checkbox("power", synth, "on"), c = choose("mode", ["easy", "medium", "hard"], "medium"), d = radio("wave", synth, "wave"), e = dropdown("planet", ["Mercury", "Venus", "Earth"], "Earth")
+const first = [a.on, b.value, c.value, c.index, d.value, d.choices, e.value, e.open]
+b.on = false; c.value = "hard"; d.pick(0); e.index = 1
+window.result = [...first, synth.values, c.index, e.value]`,
+    want: [true, true, 'medium', 1, 'square', ['sine', 'saw', 'square'], 'Earth', false, { on: 0, wave: 0 }, 2, 'Venus'] },
+  { what: 'choices that do not fit on one line take two even ones',
+    source: `canvas.parentElement.style.width = "300px"
+await drawn()
+const c = choose("day", ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+await drawn()
+const found = [c.cols, c.x + c.w <= 300, c.cell(4, c.u).y > c.cell(3, c.u).y, c.cell(3, c.u).y === c.cell(0, c.u).y]
+canvas.parentElement.style.width = "760px"
+window.result = found`,
+    want: [4, true, true, true] },
 ]
 
 /** What is being typed into, and where it is on the page. */
@@ -153,16 +169,71 @@ window.t = { a: textBox("name", "Ada", { onChange: (v) => heard.push(v), onEnter
       return [fingered > 53 && fingered < 60, keyed[0] - fingered, keyed[1], await read(page, '[t.b.value, t.api.panel.focus === t.b]')]
     },
     want: [true, 11, true, [100, true]] },
+  { what: 'a checkbox is ticked by a click, and a finger chooses among choices side by side (sliding across them) and one under another',
+    setup: `const heard = []
+window.t = { a: checkbox("sound", false, (on) => heard.push(on)), c: choose("mode", ["easy", "medium", "hard"], { onChange: (v) => heard.push(v) }), r: radio("size", ["small", "medium", "large"]), heard }`,
+    async act(page, { spot, read, finger }) {
+      await page.mouse.click(...await spot(page, 'a'))
+      const ticked = await read(page, 't.a.on')
+      await page.mouse.click(...await spot(page, 'c', 5 / 6, 0.7))
+      const clicked = await read(page, 't.c.value')
+      const cell = (i) => spot(page, 'c', (i + 0.5) / 3, 0.7)
+      await finger(page, 'pointerdown', 11, await cell(0)); await finger(page, 'pointermove', 11, await cell(1)); await finger(page, 'pointerup', 11, await cell(1))
+      await page.mouse.click(...await spot(page, 'r', 0.5, 0.86))
+      await page.locator('#s canvas[tabindex]').focus()
+      await page.keyboard.press('ArrowUp')
+      return [ticked, clicked, await read(page, '[t.c.value, t.heard, t.r.value]')]
+    },
+    want: [true, 'hard', ['medium', [true, 'hard', 'easy', 'medium'], 'medium']] },
+  { what: 'a dropdown opens its list over the controls: a tap on a line picks it and closes the list, a touch outside closes it and is not felt underneath, and a long list is moved with the wheel and a finger',
+    setup: `const heard = []
+const names = []; for (let i = 0; i < 30; i++) names.push("choice " + i)
+window.t = { p: dropdown("planet", ["Mercury", "Venus", "Earth", "Mars"], "Earth", { onChange: (v) => heard.push(v) }), d: dial("x", 0, 100, 50), long: dropdown("long", names), heard, api: dials(), over: () => over(700, 500) }`,
+    async act(page, { spot, read, finger, settle }) {
+      const line = (name, i) => read(page, `(() => { const l = t.${name}.list, b = document.querySelector("#s canvas").getBoundingClientRect(); return [b.left + l.x + l.w / 2, b.top + l.y + 4 * l.u + (${i} + 0.5) * 40 * l.u - l.scroll] })()`)
+      const before = await read(page, 't.over()')
+      await page.mouse.click(...await spot(page, 'p', 0.5, 0.65))
+      await settle(page)
+      const open = await read(page, '[t.p.open, t.over(), t.p.list.y >= t.p.y + t.p.h - 8, t.p.list.h]')
+      await page.mouse.click(...await line('p', 3))
+      const picked = await read(page, '[t.p.value, t.p.open, t.heard]')
+      await page.mouse.click(...await spot(page, 'p', 0.5, 0.65))
+      await settle(page)
+      const [x, y] = await spot(page, 'd')
+      await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x, y - 60, { steps: 3 }); await page.mouse.up()
+      const outside = await read(page, '[t.p.open, t.p.value, t.d.value]')
+      await page.mouse.click(...await spot(page, 'long', 0.5, 0.65))
+      await settle(page)
+      const whole = await read(page, '[t.long.list.most > 0, t.long.list.y + t.long.list.h <= t.api.panel.H, t.long.list.scroll]')
+      await page.mouse.move(...await line('long', 2)); await page.mouse.wheel(0, 400)
+      await settle(page)
+      const wheeled = await read(page, 't.long.list.scroll')
+      const from = await line('long', 14)
+      await finger(page, 'pointerdown', 11, from); await finger(page, 'pointermove', 11, [from[0], from[1] - 50]); await finger(page, 'pointermove', 11, [from[0], from[1] - 100]); await finger(page, 'pointerup', 11, [from[0], from[1] - 100])
+      const dragged = await read(page, '[t.long.list.scroll, t.long.open, t.long.value]')
+      const at = await line('long', 15)
+      await finger(page, 'pointerdown', 11, at); await finger(page, 'pointerup', 11, at)
+      await page.locator('#s canvas[tabindex]').focus()
+      await page.keyboard.press('Enter'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter')
+      return [before, open.slice(0, 3), picked, outside, whole, wheeled, dragged[0] - wheeled, dragged.slice(1), await read(page, '[t.long.value, t.long.open]')]
+    },
+    want: [false, [true, true, true], ['Mars', false, ['Mars']], [false, 'Mars', 50], [true, true, 0], 400, 100, [true, 'choice 0'], ['choice 17', false]] },
 ]
 
 /** Scenes laid out at every size of screen: each must be whole, apart, in the picture and big enough for a finger. */
 export const MORE_LAID = {
   any: `let score = 1250
 label("player")
-number("lives", 0, 9, 3); number("cutoff", 20, 20000, 440, { unit: "Hz", step: 10 }); textBox("name", "Ada"); textBox("city", { placeholder: "where?" })
+number("lives", 0, 9, 3); number("cutoff", 20, 20000, 440, { unit: "Hz", step: 10 })
+label("who")
+textBox("name", "Ada"); textBox("city", { placeholder: "where?" })
 row()
 label("game")
-readout("score", () => score, { size: "large" }); readout("time", 65, { format: "clock", size: "large" }); readout("speed", 12.5, { unit: "km/h" }); readout("status", "Ready")`,
+readout("score", () => score, { size: "large" }); readout("time", 65, { format: "clock", size: "large" }); readout("speed", 12.5, { unit: "km/h" }); readout("status", "Ready")
+row()
+label("settings")
+checkbox("sound", true); checkbox("show hints"); choose("mode", ["easy", "medium", "hard"], "medium"); choose("day", ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], "Wed")
+radio("size", ["small", "medium", "large"], "medium"); dropdown("planet", ["Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"], "Earth")`,
 }
 
 /** In the page: every control of these kinds is drawn alone on a clear canvas, and what it painted is measured against its box. */
@@ -170,7 +241,8 @@ export const SPILL = (kinds) => `(() => {
   const p = document.querySelector("#s canvas")[Symbol.for("dials.panel")], wrong = [], kinds = ${JSON.stringify(kinds)}
   const c = Object.assign(document.createElement("canvas"), { width: Math.ceil(p.W), height: Math.ceil(p.H) }), g = c.getContext("2d", { willReadFrequently: true })
   for (const item of p.items) {
-    if (!kinds.includes(item.kind) || item.hidden || !item.w) continue
+    // One that is partly out of sight, on plates that have to be moved to see it, is not measured.
+    if (!kinds.includes(item.kind) || item.hidden || !item.w || item.x < 0 || item.y < 0 || item.x + item.w > p.W || item.y + item.h > p.H) continue
     g.clearRect(0, 0, c.width, c.height)
     g.save(); item.draw(g, item.u); g.restore()
     const d = g.getImageData(0, 0, c.width, c.height).data

@@ -1428,6 +1428,7 @@ class Panel {
     listen(window, 'pointercancel', (e) => this.pointerUp(e))
     listen(canvas, 'wheel', (e) => {
       const v = this.viewport, p = this.point(e)
+      if (this.popup) { e.preventDefault(); if (this.popup.wheel) this.popup.wheel(e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY); return }
       if (!v || p.x < v.x || p.x >= v.x + v.w || p.y < v.y || p.y >= v.y + v.h) return
       e.preventDefault()
       this.scrollBy(e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY, e.deltaMode === 1 ? e.deltaX * 30 : e.deltaX)
@@ -2355,6 +2356,8 @@ class Panel {
       if (!v || Math.hypot(f.vx, f.vy) < 0.02 || (was[0] === v.scroll && was[1] === v.scrollX)) this.fling = null
     }
     const { g, ratio } = this
+    // What is open over the controls is drawn last, over everything: while it is, the whole is drawn afresh.
+    if (this.popup && (this.stale.size || this.popup.stale)) this.shift = true
     if (this.arrange || this.shift) {
       const quick = !this.arrange
       this.arrange = this.shift = false
@@ -2364,6 +2367,7 @@ class Panel {
       this.ground()
       for (const item of this.items) this.paint(item, false)
       this.cover()
+      if (this.popup) this.popup.paint(g)
       // The rectangle no control is on, then the picture's width and height and the scale: said when any of them changes.
       const now = this.info(), free = [...this.free.map(Math.round), now.width, now.height, now.scale]
       if (free.join() !== this.freeSaid) {
@@ -2540,7 +2544,7 @@ class Panel {
   covers(x, y) {
     const v = this.viewport
     // Where the plates can be moved, the whole of where they are seen is the controls': a finger there moves them.
-    return !!this.under(x, y) || !!this.tabAt(x, y) || (!!v && x >= v.x && x < v.x + v.w && y >= v.y && y < v.y + v.h)
+    return !!this.popup || !!this.under(x, y) || !!this.tabAt(x, y) || (!!v && x >= v.x && x < v.x + v.w && y >= v.y && y < v.y + v.h)
   }
   pointerDown(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return
@@ -3063,7 +3067,342 @@ class Readout extends Control {
   }
 }
 
-Object.assign(KINDS, { number: NumberBox, textBox: TextBox, readout: Readout })
+/**
+ * SOMETHING OPEN OVER THE CONTROLS: a list to pick from, a colour picker, a message. It is drawn
+ * last, over everything, and while it is open every touch is its own: one outside it closes it.
+ * `owner` is the control it was opened from (it is put beside it), or nothing, and then it is
+ * in the middle of the picture.
+ */
+class Popup {
+  constructor(panel, owner) {
+    this.panel = panel
+    this.owner = owner || null
+    this.x = this.y = this.w = this.h = 0
+    this.held = false
+    this.stale = true
+  }
+  get u() { return this.panel.u }
+  get shown() { return this.panel.popup === this }
+  open() {
+    const panel = this.panel
+    if (panel.typing) panel.typing.close(true)
+    if (panel.popup && panel.popup !== this) panel.popup.close()
+    panel.popup = this
+    if (this.owner) panel.focus = this.owner
+    this.stale = true
+    return this
+  }
+  close() {
+    if (!this.shown) return
+    this.panel.popup = null
+    for (const [id, held] of this.panel.grabs) if (held === this) this.panel.grabs.delete(id)
+    this.held = false
+    this.panel.shift = true
+    if (this.closed) this.closed()
+  }
+  touch() { this.stale = true }
+  /** Where it goes: under what it was opened from if there is room, else over it, and never off the picture. */
+  put(w, h, near) {
+    const { W, H } = this.panel, edge = 6 * this.u
+    this.w = Math.min(w, W - 2 * edge)
+    this.h = Math.min(h, H - 2 * edge)
+    if (!near) { this.x = (W - this.w) / 2; this.y = (H - this.h) / 2; return }
+    const [nx, ny, nw, nh] = near, gap = 4 * this.u
+    this.x = clamp(nx + nw / 2 - this.w / 2, edge, W - edge - this.w)
+    const under = ny + nh + gap, over = ny - gap - this.h
+    this.y = under + this.h <= H - edge ? under : over >= edge ? over : clamp(under, edge, H - edge - this.h)
+  }
+  inside(p) { return p.x >= this.x && p.x < this.x + this.w && p.y >= this.y && p.y < this.y + this.h }
+  paint(g) {
+    const u = this.u
+    this.stale = false
+    // What it was opened from has gone (its scene took it away, or its page was turned): so does this.
+    if (this.owner && (!this.panel.items.includes(this.owner) || this.owner.hidden)) return this.close()
+    this.arrange(g, u)
+    g.save()
+    if (this.shade) { g.fillStyle = 'rgba(0, 0, 0, 0.55)'; g.fillRect(0, 0, this.panel.W, this.panel.H) }
+    g.shadowColor = 'rgba(0, 0, 0, 0.5)'
+    g.shadowBlur = 18 * u
+    g.shadowOffsetY = 5 * u
+    rounded(g, this.x, this.y, this.w, this.h, 10 * u)
+    g.fillStyle = THEME.plate
+    g.fill()
+    g.shadowColor = 'transparent'
+    g.strokeStyle = THEME.edge
+    g.lineWidth = 1
+    g.stroke()
+    rounded(g, this.x, this.y, this.w, this.h, 10 * u)
+    g.clip()
+    this.draw(g, u)
+    g.restore()
+  }
+  /** A touch outside it closes it, and is not felt by what is underneath. */
+  down(p) {
+    this.out = !this.inside(p)
+    if (this.out) { if (!this.fixed) this.close(); return }
+    this.press(p)
+  }
+  move(p) { if (!this.out) this.drag(p) }
+  up(p) { if (!this.out) this.lift(p) }
+  arrange() {}
+  draw() {}
+  press() {}
+  drag() {}
+  lift() {}
+}
+
+/** A tick, drawn: the mark of what is chosen. */
+function tick(g, cx, cy, size, colour, thick) {
+  g.strokeStyle = colour
+  g.lineWidth = thick
+  g.lineCap = 'round'
+  g.lineJoin = 'round'
+  g.beginPath()
+  g.moveTo(cx - size * 0.5, cy + size * 0.02)
+  g.lineTo(cx - size * 0.14, cy + size * 0.38)
+  g.lineTo(cx + size * 0.52, cy - size * 0.36)
+  g.stroke()
+}
+
+/** A CHECKBOX: a toggle drawn as a box that is ticked, with its label beside it. */
+class Checkbox extends Toggle {
+  natural(u, room, g) {
+    g.font = `${14 * u}px ${THEME.font}`
+    return [Math.max(64 * u, g.measureText(this.label).width + 54 * u), 44 * u]
+  }
+  keyDown(e) { return keysOf(this, e, { Space: () => this.down(), Enter: () => this.down() }) }
+  draw(g, u) {
+    const side = 22 * u, x = this.x + 10 * u, cy = this.y + this.h / 2
+    rounded(g, x, cy - side / 2, side, side, 6 * u)
+    g.fillStyle = this.v ? this.accent : THEME.well
+    g.fill()
+    if (!this.v) { g.strokeStyle = this.held ? this.accent : THEME.track; g.lineWidth = 1.75 * u; g.stroke() }
+    else tick(g, x + side / 2, cy, side * 0.6, THEME.well, 2.75 * u)
+    words(g, this.label, x + side + 9 * u, cy + 0.5 * u, 14 * u, THEME.text, 'left', '', this.w - side - 26 * u)
+    ring(g, this, x, cy - side / 2, side, side, 6 * u, u)
+  }
+}
+
+/**
+ * ONE OF A FEW, all in sight: the choices stand side by side, and the one chosen is lit. A finger
+ * that slides across them chooses as it goes. Where they do not fit on one line they take two.
+ * `value` is the choice and `index` its place, as for a select.
+ */
+class Choose extends Select {
+  /** Go to a choice by hand. */
+  pick(i) {
+    i = clamp(i, 0, this.choices.length - 1)
+    if (i === this.i || !this.choices.length) return
+    this.i = i
+    this.changed(this.choices[i])
+  }
+  natural(u, room, g) {
+    const n = Math.max(1, this.choices.length)
+    g.font = `600 ${13 * u}px ${THEME.font}`
+    let cell = 44 * u
+    for (const choice of this.choices) cell = Math.max(cell, g.measureText(String(choice)).width + 24 * u)
+    // As many to a line as fit, and the lines as even as they can be.
+    const lines = Math.ceil(n / Math.max(1, Math.min(n, Math.floor((room - 12 * u) / cell))))
+    this.cols = Math.ceil(n / lines)
+    return [Math.min(room, Math.max(this.cols * cell + 12 * u, 96 * u)), (25 + lines * 30 + 7) * u]
+  }
+  stretch() { return [1, 1.5] }
+  /** Where choice i is drawn. */
+  cell(i, u) {
+    const across = this.cols || 1, lines = Math.ceil(this.choices.length / across)
+    const w = (this.w - 12 * u) / across, h = (this.h - 32 * u) / lines
+    return { x: this.x + 6 * u + (i % across) * w, y: this.y + 25 * u + Math.floor(i / across) * h, w, h }
+  }
+  choiceAt(p, u) {
+    const across = this.cols || 1, first = this.cell(0, u)
+    const col = clamp(Math.floor((p.x - first.x) / first.w), 0, across - 1), line = clamp(Math.floor((p.y - first.y) / first.h), 0, Math.ceil(this.choices.length / across) - 1)
+    return Math.min(this.choices.length - 1, line * across + col)
+  }
+  down(p) { this.pick(this.choiceAt(p, this.u)); this.touch() }
+  move(p) { this.pick(this.choiceAt(p, this.u)) }
+  keyDown(e) {
+    const by = (n) => () => this.pick(this.i + n)
+    return keysOf(this, e, { ArrowRight: by(1), ArrowDown: by(1), ArrowLeft: by(-1), ArrowUp: by(-1), Home: () => this.pick(0), End: () => this.pick(this.choices.length - 1) })
+  }
+  draw(g, u) {
+    const n = this.choices.length
+    words(g, this.label, this.x + this.w / 2, this.y + 13 * u, 12 * u, THEME.dim, 'center', '', this.w - 6 * u)
+    rounded(g, this.x + 6 * u, this.y + 25 * u, this.w - 12 * u, this.h - 32 * u, 8 * u)
+    g.fillStyle = THEME.knob
+    g.fill()
+    for (let i = 0; i < n; i++) {
+      const c = this.cell(i, u), on = i === this.i
+      if (on) {
+        rounded(g, c.x + 3 * u, c.y + 3 * u, c.w - 6 * u, c.h - 6 * u, 6 * u)
+        g.fillStyle = this.accent
+        g.fill()
+      }
+      words(g, String(this.choices[i]), c.x + c.w / 2, c.y + c.h / 2 + 0.5 * u, 13 * u, on ? THEME.well : THEME.text, 'center', '600', c.w - 10 * u)
+    }
+    ring(g, this, this.x + 6 * u, this.y + 25 * u, this.w - 12 * u, this.h - 32 * u, 8 * u, u)
+  }
+}
+
+/** ONE OF A FEW, one under another, each with a round mark that is filled when it is the one chosen. */
+class Radio extends Choose {
+  natural(u, room, g) {
+    g.font = `${14 * u}px ${THEME.font}`
+    let widest = g.measureText(this.label).width - 30 * u
+    for (const choice of this.choices) widest = Math.max(widest, g.measureText(String(choice)).width)
+    return [Math.min(room, Math.max(96 * u, widest + 54 * u)), ((this.label ? 25 : 6) + Math.max(1, this.choices.length) * 34 + 4) * u]
+  }
+  stretch() { return [1, 1] }
+  cell(i, u) {
+    const top = this.y + (this.label ? 25 : 6) * u
+    return { x: this.x + 6 * u, y: top + i * 34 * u, w: this.w - 12 * u, h: 34 * u }
+  }
+  choiceAt(p, u) { return clamp(Math.floor((p.y - this.cell(0, u).y) / (34 * u)), 0, this.choices.length - 1) }
+  draw(g, u) {
+    if (this.label) words(g, this.label, this.x + 10 * u, this.y + 13 * u, 12 * u, THEME.dim, 'left', '', this.w - 16 * u)
+    for (let i = 0; i < this.choices.length; i++) {
+      const c = this.cell(i, u), on = i === this.i, cx = c.x + 15 * u, cy = c.y + c.h / 2
+      g.beginPath(); g.arc(cx, cy, 10 * u, 0, TAU)
+      g.fillStyle = THEME.well
+      g.fill()
+      g.strokeStyle = on ? this.accent : THEME.track
+      g.lineWidth = 1.75 * u
+      g.stroke()
+      if (on) { g.fillStyle = this.accent; g.beginPath(); g.arc(cx, cy, 5.5 * u, 0, TAU); g.fill() }
+      words(g, String(this.choices[i]), cx + 19 * u, cy + 0.5 * u, 14 * u, on ? THEME.text : THEME.dim, 'left', on ? '600' : '', c.w - 40 * u)
+      if (on) ring(g, this, c.x + 3 * u, c.y + 3 * u, c.w - 6 * u, c.h - 6 * u, 6 * u, u)
+    }
+  }
+}
+
+/** How tall a line of an open list is, in points, and how many are shown at once at most: more are moved to with a finger or the wheel. */
+const LIST_LINE = 40
+const LIST_LINES = 7.5
+
+/** The list a dropdown opens: every choice on a line of its own. A tap picks; a drag, or the wheel, moves a list too long to show. */
+class ListPopup extends Popup {
+  constructor(owner) {
+    super(owner.panel, owner)
+    this.scroll = null // how far down the list has been moved; null: not yet, so the choice is brought into sight
+    this.on = owner.i // the line the keys are on
+  }
+  arrange(g, u) {
+    const o = this.owner, n = o.choices.length, line = LIST_LINE * u
+    g.font = `600 ${14 * u}px ${THEME.font}`
+    let widest = 0
+    for (const choice of o.choices) widest = Math.max(widest, g.measureText(String(choice)).width)
+    const f = o.field(u)
+    this.put(Math.max(f.w, widest + 62 * u), Math.min(n, LIST_LINES) * line + 8 * u, [f.x, f.y, f.w, f.h])
+    this.most = Math.max(0, n * line + 8 * u - this.h)
+    this.scroll = clamp(this.scroll ?? (o.i + 0.5) * line - this.h / 2, 0, this.most)
+  }
+  /** Bring a line into sight. */
+  see(i) {
+    const line = LIST_LINE * this.u, top = i * line, bottom = top + line + 8 * this.u
+    this.scroll = clamp(clamp(this.scroll || 0, bottom - this.h, top), 0, this.most || 0)
+    this.touch()
+  }
+  wheel(by) { this.scroll = clamp((this.scroll || 0) + by, 0, this.most || 0); this.touch() }
+  lineAt(p) { return Math.floor((p.y - this.y - 4 * this.u + this.scroll) / (LIST_LINE * this.u)) }
+  press(p) { this.from = { x: p.x, y: p.y }; this.last = p.y; this.moved = false; this.down_ = this.lineAt(p); this.touch() }
+  drag(p) {
+    if (!this.moved && Math.abs(p.y - this.from.y) < TAP_REACH * this.u) return
+    this.moved = true
+    this.wheel(this.last - p.y)
+    this.last = p.y
+  }
+  lift(p) {
+    const i = this.lineAt(p), o = this.owner
+    this.down_ = null
+    if (this.moved || i < 0 || i >= o.choices.length) return this.touch()
+    this.close()
+    o.pick(i)
+  }
+  closed() { this.owner.touch() }
+  keyDown(e) {
+    const n = this.owner.choices.length, to = (i) => { this.on = clamp(i, 0, n - 1); this.see(this.on) }
+    if (e.key === 'Escape') this.close()
+    else if (e.key === 'ArrowDown') to(this.on + 1)
+    else if (e.key === 'ArrowUp') to(this.on - 1)
+    else if (e.key === 'Home') to(0)
+    else if (e.key === 'End') to(n - 1)
+    else if (e.key === 'Enter' || e.key === ' ') { this.close(); this.owner.pick(this.on) }
+    else return false
+    return true
+  }
+  draw(g, u) {
+    const o = this.owner, line = LIST_LINE * u, top = this.y + 4 * u - this.scroll
+    for (let i = Math.max(0, Math.floor(this.scroll / line) - 1); i < o.choices.length; i++) {
+      const y = top + i * line
+      if (y > this.y + this.h) break
+      const on = i === o.i, pressed = i === this.down_ && !this.moved, keyed = this.panel.keyed && i === this.on
+      if (on || pressed || keyed) {
+        rounded(g, this.x + 4 * u, y + 2 * u, this.w - 8 * u, line - 4 * u, 7 * u)
+        g.fillStyle = pressed ? THEME.track : THEME.knob
+        g.fill()
+        if (keyed) { g.strokeStyle = THEME.text; g.lineWidth = 1.5 * u; g.stroke() }
+      }
+      if (on) tick(g, this.x + 22 * u, y + line / 2, 12 * u, o.accent, 2.25 * u)
+      words(g, String(o.choices[i]), this.x + 40 * u, y + line / 2 + 0.5 * u, 14 * u, on ? THEME.text : THEME.dim, 'left', on ? '600' : '', this.w - 54 * u)
+    }
+    if (this.most > 0.5) {
+      // More than is shown: a thumb at the side says how far down the list is.
+      const long = Math.max(24 * u, this.h * this.h / (this.h + this.most)), y = this.y + 4 * u + (this.h - 8 * u - long) * (this.scroll / this.most)
+      rounded(g, this.x + this.w - 7 * u, y, 3.5 * u, long, 2 * u)
+      g.fillStyle = THEME.track
+      g.fill()
+    }
+  }
+}
+
+/**
+ * A DROPDOWN: one of a list too long to step through. It shows the choice; a tap opens the whole
+ * list over the controls, which is moved with a finger or the wheel when it is long, and closes on
+ * a pick or a touch outside it. `value` is the choice and `index` its place, as for a select.
+ */
+class Dropdown extends Choose {
+  natural(u, room, g) {
+    g.font = `600 ${13 * u}px ${THEME.font}`
+    let widest = 0
+    for (const choice of this.choices) widest = Math.max(widest, g.measureText(String(choice)).width)
+    return [Math.min(room, Math.max(120 * u, Math.min(widest, 180 * u) + 58 * u)), 62 * u]
+  }
+  stretch() { return [0.88, 1.3] }
+  field(u) { return { x: this.x + 6 * u, y: this.y + 25 * u, w: this.w - 12 * u, h: 30 * u } }
+  get open() { return !!this.list && this.list.shown }
+  set open(on) { if (on) this.show(); else if (this.list) this.list.close() }
+  /** Open the list. */
+  show() { if (this.choices.length) this.list = new ListPopup(this).open() }
+  down(p) { this.from = { x: p.x, y: p.y }; this.touch() }
+  move() {}
+  up(p) { if (tapped(this, p)) this.show(); this.touch() }
+  keyDown(e) {
+    if (this.open) {
+      if (this.panel.focus !== this) return false
+      this.panel.keyed = true
+      return this.list.keyDown(e)
+    }
+    const by = (n) => () => this.pick(this.i + n)
+    return keysOf(this, e, { ArrowDown: by(1), ArrowUp: by(-1), Enter: () => this.show(), Space: () => this.show() })
+  }
+  draw(g, u) {
+    const f = this.field(u), cy = f.y + f.h / 2
+    words(g, this.label, this.x + this.w / 2, this.y + 13 * u, 12 * u, THEME.dim, 'center', '', this.w - 6 * u)
+    rounded(g, f.x, f.y, f.w, f.h, 8 * u)
+    g.fillStyle = this.held || this.open ? THEME.track : THEME.knob
+    g.fill()
+    words(g, String(this.value ?? ''), f.x + 12 * u, cy + 0.5 * u, 13 * u, THEME.text, 'left', '600', f.w - 42 * u)
+    // The mark that says there is a list: a small arrow head, pointing down.
+    const ax = f.x + f.w - 17 * u
+    g.strokeStyle = this.accent
+    g.lineWidth = 2.25 * u
+    g.lineCap = 'round'
+    g.lineJoin = 'round'
+    g.beginPath(); g.moveTo(ax - 5 * u, cy - 2.5 * u); g.lineTo(ax, cy + 2.5 * u); g.lineTo(ax + 5 * u, cy - 2.5 * u); g.stroke()
+    ring(g, this, f.x, f.y, f.w, f.h, 8 * u, u)
+  }
+}
+
+Object.assign(KINDS, { number: NumberBox, textBox: TextBox, readout: Readout, checkbox: Checkbox, choose: Choose, radio: Radio, dropdown: Dropdown })
 for (const kind of ['readout']) SLIDES.add(kind)
 
 /** A text box: (label, text, options) or (label, target, "setting", options). A function anywhere is its onChange. */
@@ -3099,6 +3438,14 @@ function more(panel) {
     textBox: make('textBox', texted),
     /** A value or a message shown: readout("score", () => score), or score = readout("score") and score.value = 12. */
     readout: make('readout', shownFrom),
+    /** A box that is ticked: checkbox("sound", true), then sound.on. checkbox(label, target, "setting") ties it to a setting. */
+    checkbox: make('checkbox', toggled),
+    /** One of a few, side by side: choose("mode", ["easy", "medium", "hard"], "medium"), then mode.value. */
+    choose: make('choose', selected),
+    /** One of a few, one under another with a round mark each. */
+    radio: make('radio', selected),
+    /** One of a long list, which opens over the controls: dropdown("country", countries, "Peru"). */
+    dropdown: make('dropdown', selected),
   }
 }
 
@@ -3307,6 +3654,10 @@ const number = (...args) => dials().number(...args)
 const stepper = (...args) => dials().stepper(...args)
 const textBox = (...args) => dials().textBox(...args)
 const readout = (...args) => dials().readout(...args)
+const checkbox = (...args) => dials().checkbox(...args)
+const choose = (...args) => dials().choose(...args)
+const radio = (...args) => dials().radio(...args)
+const dropdown = (...args) => dials().dropdown(...args)
 
 export { dials, dial, slider, button, toggle, select, rotary, keyboard, scope, meter, label, group, row, column, grid, page, spacer, wrap, layout, room, over, theme, version,
-  number, stepper, textBox, readout }
+  number, stepper, textBox, readout, checkbox, choose, radio, dropdown }
