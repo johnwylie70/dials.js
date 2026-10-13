@@ -116,13 +116,18 @@ c.place(20, 250)
 await drawn()
 window.result = [...first, c.x, c.y, over(25, 255), over(600, 300)]`,
     want: [true, 300, 200, 20, 250, true, false] },
-  { what: 'so many controls that they would not fit are drawn smaller until they do',
-    source: `const made = []
-for (let i = 0; i < 28; i++) made.push(dial("d" + i, 0, 1))
+  { what: 'controls that nearly fit are drawn a little smaller so that they do, and more than could fit are not made tiny: the plate they are on can be moved, above the keyboard',
+    source: `const few = []
+for (let i = 0; i < 40; i++) few.push(dial("d" + i, 0, 1))
 const piano = keyboard()
 await drawn()
-window.result = [dials().panel.u < 1, made.every((c) => c.y + c.h <= piano.y && c.y >= 0)]`,
-    want: [true, true] },
+const p = dials().panel
+const first = [p.u < 1 && p.u >= 0.8, p.viewport, few.every((c) => c.y + c.h <= piano.y && c.y >= 0)]
+for (let i = 0; i < 40; i++) few.push(dial("e" + i, 0, 1))
+await drawn()
+const v = p.viewport
+window.result = [...first, p.u >= 0.8, !!v && v.max > 0, few.some((c) => c.y >= v.y + v.h), v.y + v.h <= piano.y]`,
+    want: [true, null, true, true, true, true, true] },
   { what: 'the controls are drawn on a canvas of their own, exactly over the scene\'s, and the scene\'s is left alone',
     source: `background("rgb(0, 0, 255)")
 const d = dial("a", 0, 1, 0.5)
@@ -171,7 +176,7 @@ const made = new Function(text.replace("export {", "return {"))()
 const d = made.dials(canvas).dial("a", 0, 4, 3)
 window.result = [Object.keys(made).length > 10, d.value, made.version]`,
     want: [true, 3, '0.0.0'] },
-  { what: 'a host is told what was made from a target, and is called every frame only when it asks and answers',
+  { what: 'a host is told what was made from a target and the rectangle no control is on, and is called every frame only when it asks and answers',
     source: `const heard = []
 const api = dials()
 api.listen((e) => heard.push(e))
@@ -187,7 +192,7 @@ api.ack(); api.call(8, "feed", [0, 1, 0]); api.set(7, "value", 6)
 await drawn()
 window.result = [first, beats, heard.length, api.panel.find(7).value, api.panel.find(8).list.length]
 api.drop(7); api.drop(8)`,
-    want: ['[{"c":[],"n":[],"m":[7,2,9,4,"",5],"b":0}]', 1, 2, 6, 3] },
+    want: ['[{"c":[],"n":[],"m":[7,2,9,4,"",5],"b":0,"f":[0,260,760,300]}]', 1, 2, 6, 3] },
 ]
 
 // --- cases with hands. `setup` is the scene; it leaves its controls in `window.t`. `act` uses them.
