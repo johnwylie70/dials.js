@@ -1087,7 +1087,7 @@ async function layoutCases(browser, name, size) {
   for (const [scene, source] of Object.entries(MORE_LAID)) {
     r = await lay(page, source)
     const small = r.error || !r.coarse ? [] : r.controls.filter((c) => MORE_TOUCHED.includes(c.kind) && Math.min(c.whole[2], c.whole[3]) < TOUCH_LEAST).map((c) => `${c.kind} "${c.label}"`)
-    check(name, said(`the controls ${scene === 'any' ? 'for any program' : 'for ' + scene} are laid out whole and apart, each draws only in its own box, and none is too small for a finger`), [r.error || faults(r), r.error ? null : await page.evaluate(SPILL(MORE_KINDS)), small], [[], [], []])
+    check(name, said(`the controls ${{ any: 'for any program', more: 'for any program (pads, colours, bars, lights, sliders)' }[scene] || 'for ' + scene} are laid out whole and apart, each draws only in its own box, and none is too small for a finger`), [r.error || faults(r), r.error ? null : await page.evaluate(SPILL(MORE_KINDS)), small], [[], [], []])
     await shot('more-' + scene)
   }
   check(name, said('no scene left an error on the page'), errors, [])

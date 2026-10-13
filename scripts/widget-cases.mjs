@@ -5,12 +5,12 @@
  */
 
 /** The names a scene is given besides the first part's. */
-export const MORE = 'const { number, stepper, textBox, readout, checkbox, choose, radio, dropdown } = lib\n'
+export const MORE = 'const { number, stepper, textBox, readout, checkbox, choose, radio, dropdown, xyPad, colourPicker, colorPicker, progress, light, busy, rangeSlider, fader } = lib\n'
 
 /** The kinds of this part: at every size each is asked to draw, and must keep to its own box. */
-export const MORE_KINDS = ['number', 'textBox', 'readout', 'checkbox', 'choose', 'radio', 'dropdown']
+export const MORE_KINDS = ['number', 'textBox', 'readout', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'progress', 'light', 'busy', 'rangeSlider', 'fader']
 /** Those a finger works: on a touch screen none is smaller than a finger. */
-export const MORE_TOUCHED = ['number', 'textBox', 'checkbox', 'choose', 'radio', 'dropdown']
+export const MORE_TOUCHED = ['number', 'textBox', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'rangeSlider', 'fader']
 
 export const MORE_CASES = [
   { what: 'a number box is a number: it counts in ones, or in tenths over a small range, and keeps to its range and its step',
@@ -76,6 +76,45 @@ const found = [c.cols, c.x + c.w <= 300, c.cell(4, c.u).y > c.cell(3, c.u).y, c.
 canvas.parentElement.style.width = "760px"
 window.result = found`,
     want: [4, true, true, true] },
+  { what: 'an XY pad is two numbers, read as x and y: plain ranges start in the middle or where they are told, and two settings of a target give their ranges and are set',
+    source: `const lead = { v: { cutoff: 800, resonance: 0.3 }, describe: (n) => ({ cutoff: { min: 20, max: 20000, unit: "Hz" }, resonance: { min: 0, max: 1 } })[n], get(n) { return this.v[n] }, set(n, x) { this.v[n] = x } }
+const a = xyPad("spot", [0, 100], [0, 50]), b = xyPad("at", [0, 10, 2], [0, 10, 8]), c = xyPad(lead, "cutoff", "resonance"), d = xyPad("unit")
+const first = [a.x, a.y, a.value, b.x, b.y, c.x, c.y, c.label, c.control.ax.log, c.control.ax.unit, d.value]
+a.x = 150; a.y = 10; c.value = [5000, 0.9]
+lead.v.cutoff = 100
+await drawn()
+window.result = [...first, a.value, lead.v.resonance, c.x, typeof a.control.w, a.kind]`,
+    want: [50, 25, [50, 25], 2, 8, 800, 0.3, 'cutoff / resonance', true, 'Hz', [0.5, 0.5], [100, 10], 0.9, 100, 'number', 'xyPad'] },
+  { what: 'a colour picker is a colour as a scene writes one: a name stays a name, a mixed colour is written with a #, and a target is read and set',
+    source: `const pen = { colour: "gold" }
+const a = colourPicker("ink", "tomato"), b = colorPicker("sky"), c = colourPicker(pen, "colour")
+const first = [a.value, \`\${a}\`, a.rgb, Math.round(a.hue), Math.round(a.strong * 100), a.bright, b.value, c.value, c.label]
+a.mix(120, 1, 1)
+const mixed = a.value
+a.take("black"); a.take("white")
+c.value = "blue"
+window.result = [...first, mixed, a.value, Math.round(a.hue), pen.colour, a.colours.length]`,
+    want: ['tomato', 'tomato', [255, 99, 71], 9, 72, 1, 'tomato', 'gold', 'colour', '#00ff00', 'white', 120, 'blue', 16] },
+  { what: 'a progress bar, a light and a busy ring show what they are told: a part done, a brightness, a colour, a function\'s answer or a target\'s level',
+    source: `let done = 3
+const amp = { level: () => [0.2, 0.6] }
+const a = progress("loading", 0.4), b = progress("files", () => done, { max: 12 }), c = light("ready", true), d = light("warn", "red"), e = light("signal", amp), f = light("off"), g = busy("working"), h = busy("idle", false)
+await drawn()
+const first = [a.done, b.done, c.on, c.bright, d.on, d.shine, e.bright, f.on, g.on, h.on]
+done = 12; a.value = 2; c.on = false; d.value = 0.25; h.on = true
+await drawn()
+window.result = [...first, a.done, b.done, c.on, d.bright, h.value]`,
+    want: [0.4, 0.25, true, 1, true, 'red', 0.6, false, true, false, 1, 1, false, 0.25, true] },
+  { what: 'a slider with two handles is a low and a high number that never pass each other, and a fader is a slider that stands upright',
+    source: `const loop = { start: 0.2, end: 0.9, describe: () => ({ min: 0, max: 2, unit: "s" }) }
+const a = rangeSlider("price", 0, 100, [20, 80]), b = rangeSlider("loop", loop, "start", "end"), c = rangeSlider("all", 0, 10), f = fader("vol", 0, 1, 0.7)
+const first = [a.low, a.high, a.value, b.low, b.high, b.max, b.unit, c.value, f.vertical, f.value, f * 2]
+a.low = 95; a.high = 50; b.high = 1.5; a.value = [30, 10]
+const crossed = [a.low, a.high]
+loop.start = 0.5
+await drawn()
+window.result = [...first, crossed, loop.end, b.low]`,
+    want: [20, 80, [20, 80], 0.2, 0.9, 2, 's', [0, 10], true, 0.7, 1.4, [10, 30], 1.5, 0.5] },
 ]
 
 /** What is being typed into, and where it is on the page. */
@@ -218,6 +257,78 @@ window.t = { p: dropdown("planet", ["Mercury", "Venus", "Earth", "Mars"], "Earth
       return [before, open.slice(0, 3), picked, outside, whole, wheeled, dragged[0] - wheeled, dragged.slice(1), await read(page, '[t.long.value, t.long.open]')]
     },
     want: [false, [true, true, true], ['Mars', false, ['Mars']], [false, 'Mars', 50], [true, true, 0], 400, 100, [true, 'choice 0'], ['choice 17', false]] },
+  { what: 'an XY pad\'s dot comes to the finger and follows it out to the edge; one finger at a time; Shift moves it a tenth as far; two clicks put it back; and one that springs goes back when it is let go',
+    setup: `const heard = []
+const a = xyPad("spot", [0, 100], [0, 100], { onChange: (x, y) => heard.push([Math.round(x), Math.round(y)]) }), b = xyPad("stick", [-1, 1], [-1, 1], { spring: true })
+window.t = { a: a.control, pad: a, b: b.control, stick: b, heard, at: (fx, fy) => { const c = a.control, s = c.pad(c.u), r = canvas.getBoundingClientRect(); return [r.left + s.x + s.side * fx, r.top + s.y + s.side * (1 - fy)] } }`,
+    async act(page, { spot, read, finger }) {
+      const at = (fx, fy) => read(page, `t.at(${fx}, ${fy})`)
+      await page.mouse.click(...await at(0.25, 0.8))
+      const clicked = await read(page, '[Math.round(t.pad.x), Math.round(t.pad.y), t.heard.at(-1)]')
+      await page.waitForTimeout(400)
+      const [x, y] = await at(0.25, 0.8)
+      await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + 600, y + 600, { steps: 4 })
+      const dragged = await read(page, 't.pad.value')
+      await finger(page, 'pointerdown', 12, await at(0.5, 0.5)); await finger(page, 'pointerup', 12, await at(0.5, 0.5))
+      const second = await read(page, 't.pad.value')
+      await page.mouse.up()
+      await page.waitForTimeout(400)
+      await page.keyboard.down('Shift')
+      const from = await at(0.5, 0.5)
+      await page.mouse.move(...from); await page.mouse.down(); await page.mouse.move(from[0] - 150, from[1], { steps: 3 }); await page.mouse.up()
+      await page.keyboard.up('Shift')
+      const fine = await read(page, 'Math.round(t.pad.x)')
+      await page.waitForTimeout(400)
+      await page.mouse.click(...from); await page.mouse.click(...from)
+      const back = await read(page, 't.pad.value')
+      const s = await spot(page, 'b', 0.8, 0.3)
+      await finger(page, 'pointerdown', 11, s)
+      const pushed = await read(page, 't.stick.x > 0.4 && t.stick.y > 0.2')
+      await finger(page, 'pointerup', 11, s)
+      return [clicked, dragged, second, fine, back, pushed, await read(page, 't.stick.value')]
+    },
+    want: [[25, 80, [25, 80]], [100, 0], [100, 0], 90, [50, 50], true, [0, 0]] },
+  { what: 'a colour picker opens over the controls: a drag in its square and along its strip mixes a colour, a tap on a named colour takes it and closes the picker, and a touch outside closes it',
+    setup: `const heard = []
+window.t = { c: colourPicker("ink", "tomato", (v) => heard.push(v)), d: dial("x", 0, 100, 50), heard, over: () => over(5, 5),
+  part: (name, fx, fy) => { const r = t.c.picker[name], b = canvas.getBoundingClientRect(); return [b.left + r.x + r.w * fx, b.top + r.y + r.h * fy] },
+  named: (i) => { const n = t.c.picker.names, b = canvas.getBoundingClientRect(); return [b.left + n.x + (i % 8 + 0.5) * n.each, b.top + n.y + (Math.floor(i / 8) + 0.5) * n.h] } }`,
+    async act(page, { spot, read, finger, settle }) {
+      await page.mouse.click(...await spot(page, 'c', 0.5, 0.65))
+      await settle(page)
+      const open = await read(page, '[t.c.open, t.over()]')
+      const [x, y] = await read(page, 't.part("square", 0.5, 0.5)')
+      await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + 2000, y - 2000, { steps: 3 }); await page.mouse.up()
+      const strong = await read(page, '[t.c.value, t.c.open]')
+      const h = await read(page, 't.part("strip", 0, 0.5)'), to = await read(page, 't.part("strip", 2 / 3, 0.5)')
+      await finger(page, 'pointerdown', 11, h); await finger(page, 'pointermove', 11, to); await finger(page, 'pointerup', 11, to)
+      const hue = await read(page, '[t.c.value, Math.round(t.c.hue), t.heard.length > 2, t.heard.at(-1)]')
+      await page.mouse.click(...await read(page, 't.named(8)'))
+      const named = await read(page, '[t.c.value, t.c.open]')
+      await page.mouse.click(...await spot(page, 'c', 0.5, 0.65))
+      await settle(page)
+      await page.mouse.click(...await spot(page, 'd'))
+      return [open, strong, hue, named, await read(page, '[t.c.open, t.c.value, t.d.value]')]
+    },
+    want: [[true, true], ['#ff2700', true], ['#0000ff', 240, true, '#0000ff'], ['blue', false], [false, 'blue', 50]] },
+  { what: 'the handle of a two-handled slider nearer the finger is the one moved, and it stops at the other; a fader is dragged up',
+    setup: `const heard = []
+window.t = { r: rangeSlider("price", 0, 100, [20, 80], { size: 200, onChange: (low, high) => heard.push([Math.round(low), Math.round(high)]) }), f: fader("vol", 0, 100, 0, { size: 100 }), heard }`,
+    async act(page, { spot, read }) {
+      // The track starts 14 points in and is 200 long, 18 points up from the bottom.
+      const [x, y] = await spot(page, 'r', 0, 1), on = (v) => [x + 14 + v * 2, y - 18]
+      await page.mouse.move(...on(20)); await page.mouse.down(); await page.mouse.move(...on(50), { steps: 3 })
+      const low = await read(page, 't.r.value.map(Math.round)')
+      await page.mouse.move(...on(95), { steps: 3 }); await page.mouse.up()
+      const stopped = await read(page, 't.r.value.map(Math.round)')
+      await page.waitForTimeout(400)
+      await page.mouse.click(...on(100))
+      const high = await read(page, '[t.r.low, t.r.high, t.heard.at(-1)]')
+      const [fx, fy] = await spot(page, 'f', 0.5, 1)
+      await page.mouse.move(fx, fy - 30); await page.mouse.down(); await page.mouse.move(fx, fy - 30 - 60, { steps: 3 }); await page.mouse.up()
+      return [low, stopped, high, await read(page, 'Math.round(t.f.value)')]
+    },
+    want: [[50, 80], [80, 80], [80, 100, [80, 100]], 60] },
 ]
 
 /** Scenes laid out at every size of screen: each must be whole, apart, in the picture and big enough for a finger. */
@@ -234,6 +345,14 @@ row()
 label("settings")
 checkbox("sound", true); checkbox("show hints"); choose("mode", ["easy", "medium", "hard"], "medium"); choose("day", ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], "Wed")
 radio("size", ["small", "medium", "large"], "medium"); dropdown("planet", ["Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"], "Earth")`,
+  // Pads, colours, bars, lights and the sliders of other kinds.
+  more: `label("pad")
+xyPad("filter", [20, 20000], [0, 1]); colourPicker("ink", "tomato"); colourPicker("sky", "#3a7bd5")
+label("doing")
+progress("loading", 0.4); light("ready", true); light("warn", "red"); busy("working")
+row()
+label("mix")
+rangeSlider("price", 0, 100, [20, 80]); fader("vol", 0, 1, 0.7); fader("pan", -1, 1, 0.25)`,
 }
 
 /** In the page: every control of these kinds is drawn alone on a clear canvas, and what it painted is measured against its box. */
