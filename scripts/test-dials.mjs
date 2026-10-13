@@ -40,7 +40,7 @@ const at = `http://localhost:${server.address().port}`
 
 // Every scene starts with these: the library, and a way to wait for the controls to be laid out and drawn.
 const TOP = `const lib = await use("/dials.js")
-const { dial, slider, button, toggle, select, keyboard, scope, meter, label, group, row, column, grid, page, spacer, wrap, layout, room, over, dials, theme } = lib
+const { dial, slider, button, toggle, select, rotary, keyboard, scope, meter, label, group, row, column, grid, page, spacer, wrap, layout, room, over, dials, theme } = lib
 const drawn = async () => { await frame(); await frame(); await frame() }
 `
 // Run a scene on the page as it is now; what it left in `result`, or its error.
@@ -173,6 +173,23 @@ level = 0
 await sleep(0.4)
 window.result = [...high, b.bars[0] < 0.8 && b.bars[0] > 0, b.peaks[0], c.label]`,
     want: [0.5, 1, '0.5,0.25', true, 1, 'out'] },
+  { what: 'a rotary takes its choices from a target as a select does, sets it, and a select can be drawn as one',
+    source: `const set = []
+const synth = { values: { wave: 2 }, describe: () => ({ kind: "choice", choices: "sine|saw|square|noise", default: 0 }), get(name) { return this.values[name] }, set(name, value) { set.push(name, value); this.values[name] = value } }
+const r = rotary("wave", synth, "wave"), plain = rotary("mode", ["room", "hall", "plate", "spring"], "hall"), other = select("kind", ["a", "b"], { style: "rotary" })
+const first = [r.choices, r.value, r.index, plain.value, plain.index, r.kind, other.kind]
+r.value = "noise"; plain.index = 3
+synth.values.wave = 1
+await drawn()
+window.result = [...first, set, r.value, plain.value]`,
+    want: [['sine', 'saw', 'square', 'noise'], 'square', 2, 'hall', 1, 'rotary', 'rotary', ['wave', 3], 'saw', 'spring'] },
+  { what: 'a rotary names its choices round the knob where there is room: none on a small one, more of each on a large one, and with too many only the one it is on',
+    source: `const long = ["cathedral hall", "small bright room", "vintage spring tank", "shimmering plate"]
+const small = rotary("a", long, { size: "small" }), usual = rotary("b", long), large = rotary("c", long, { size: "large" }), many = rotary("d", ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]), three = rotary("e", ["sine", "saw", "noise"], { size: "large" })
+await drawn()
+const under = (c) => { let said = ""; const g = dials().panel.g, was = g.fillText; g.fillText = function (t, ...rest) { said = t; return was.call(this, t, ...rest) }; c.draw(g, c.u); g.fillText = was; return said }
+window.result = [small.names.length, usual.names.length, usual.names.every((n) => !n.whole), large.names.every((n) => n.w > usual.names[n.i].w), large.w > usual.w && usual.w > small.w, many.names.length, three.names.every((n) => n.whole), under(small), under(many), [small, usual, large, many, three].every((c) => c.x >= 0 && c.x + c.w <= width)]`,
+    want: [0, 4, true, true, true, 0, true, 'cathedral hall', '1', true] },
   { what: 'the library can be made from its text alone, as a host with no modules does (Python\'s page)',
     source: `const text = await (await fetch("/dials.js")).text()
 const made = new Function(text.replace("export {", "return {"))()
@@ -351,6 +368,100 @@ window.t = { b: button("fire", () => heard.push("press")), g: toggle("mute", fal
       return [plain, lit, sounding, await read(page, 't.k.octave')]
     },
     want: ['244,241,234', '255,178,36', '143,211,255', 5] },
+  { what: 'a rotary holds at each notch until the finger has gone most of the way to the next, then clicks over, and stops at its ends',
+    setup: `const heard = []
+window.t = { r: rotary("mode", ["room", "hall", "plate", "spring"], "hall", { onChange: (v) => heard.push(v) }), heard }`,
+    async act(page) {
+      const [x, y] = await spot(page, 'r')
+      const u = await read(page, 't.r.u')
+      await page.mouse.move(x, y); await page.mouse.down()
+      await page.mouse.move(x, y - 30 * u, { steps: 3 })           // a notch is 60 points here: half way is not enough
+      const held = await read(page, '[t.r.value, t.r.lean > 0]')
+      await page.mouse.move(x, y - 40 * u, { steps: 2 })
+      const clicked = await read(page, 't.r.value')
+      await page.mouse.move(x, y - 100 * u, { steps: 4 })
+      const again = await read(page, 't.r.value')
+      await page.mouse.move(x, y - 400 * u, { steps: 4 })
+      await page.mouse.move(x, y - 400 * u + 70 * u, { steps: 4 })   // and back down one
+      await page.mouse.up()
+      return [held, clicked, again, await read(page, '[t.r.value, t.r.index, t.r.lean, t.heard]')]
+    },
+    want: [['hall', true], 'plate', 'spring', ['plate', 2, 0, ['plate', 'spring', 'plate']]] },
+  { what: 'a tap on a rotary\'s name or notch goes straight there, and two taps on the knob put it back where it started',
+    setup: `window.t = { r: rotary("mode", ["room", "hall", "plate", "spring"], "hall", { size: "large" }) }`,
+    async act(page) {
+      const at = (code) => page.evaluate(`(() => { const r = window.t.r, b = document.querySelector("#s canvas").getBoundingClientRect(), [x, y] = ${code}; return [b.left + x, b.top + y] })()`)
+      await page.mouse.click(...await at('[r.names[3].x + r.names[3].w / 2, r.names[3].y]'))
+      const named = await read(page, 't.r.value')
+      await page.waitForTimeout(400)
+      await page.mouse.click(...await at('(() => { const [cx, cy] = r.centre(r.u), a = r.angle(0), far = r.knob * r.u / 2; return [cx + Math.cos(a) * far, cy + Math.sin(a) * far] })()'))
+      const notched = await read(page, 't.r.value')
+      await page.waitForTimeout(400)
+      const middle = await at('r.centre(r.u)')
+      await page.mouse.click(...middle)
+      const still = await read(page, 't.r.value')
+      await page.mouse.click(...middle)
+      return [named, notched, still, await read(page, 't.r.value')]
+    },
+    want: ['spring', 'room', 'room', 'hall'] },
+  { what: 'the keys slide to a new octave: part way for some frames, then exactly there; and a key pressed part way plays the note under the finger',
+    setup: SYNTH + `window.t = { k: keyboard(synth, { octave: 4, octaves: 2 }), log }`,
+    async act(page) {
+      await page.mouse.click(...await spot(page, 'k', 0.98, 0.05))
+      const seen = await page.evaluate(() => new Promise((done) => {
+        const k = window.t.k, each = k.w / 15, seen = [], began = performance.now()
+        const look = () => { seen.push(k.offset / each); performance.now() - began < 500 ? requestAnimationFrame(look) : done(seen) }
+        look()
+      }))
+      const part = seen.filter((v) => v > 0.05 && v < 6.95).length
+      // Again, and this time a finger lands on the keys while they are still moving.
+      await page.mouse.click(...await spot(page, 'k', 0.02, 0.05))
+      await page.waitForTimeout(60)
+      const [x, y] = await spot(page, 'k', 0.4, 0.9)
+      const played = await page.evaluate(([x, y]) => {
+        const k = window.t.k, scene = document.querySelector('#s canvas'), b = scene.getBoundingClientRect(), each = k.w / 15, off = k.offset
+        const key = (across) => { const i = Math.floor(across / each); return 12 * (k.octave + 1) + 12 * Math.floor(i / 7) + [0, 2, 4, 5, 7, 9, 11][((i % 7) + 7) % 7] }
+        scene.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 51, pointerType: 'touch', clientX: x, clientY: y, bubbles: true, cancelable: true }))
+        const got = [...k.notes]
+        window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 51, pointerType: 'touch', clientX: x, clientY: y, bubbles: true }))
+        return [off !== 0, got[0] === key(x - b.left - k.x - off), key(x - b.left - k.x - off) !== key(x - b.left - k.x), k.notes.length]
+      }, [x, y])
+      await page.waitForTimeout(350)
+      return [seen[0] > 6, part >= 3, seen.at(-1), seen.every((v, i) => !i || v <= seen[i - 1] + 1e-9), played, await read(page, '[t.k.octave, t.k.offset]')]
+    },
+    want: [true, true, 0, true, [true, true, true, 0], [4, 0]] },
+  { what: 'Z and X slide the keys too, a note held when the octave changes is let go once and cleanly, a held arrow steps again and again, and animate: false jumps',
+    setup: SYNTH + `window.t = { k: keyboard(synth, { octave: 4, octaves: 1 }), still: keyboard({ octave: 4, octaves: 1, animate: false, keys: false, height: 60 }), log }`,
+    async act(page) {
+      await page.locator('#s canvas[tabindex]').focus()
+      await page.mouse.move(...await spot(page, 'k', 0.5 / 8, 0.9)); await page.mouse.down()
+      await page.keyboard.press('KeyX')
+      const after = await read(page, '[t.k.octave, t.k.offset !== 0, t.k.notes, t.log]')
+      await page.mouse.up()
+      await page.waitForTimeout(300)
+      await page.mouse.click(...await spot(page, 'still', 0.98, 0.05))
+      const jumped = await read(page, '[t.still.octave, t.still.offset]')
+      await page.mouse.move(...await spot(page, 'k', 0.02, 0.05)); await page.mouse.down()
+      await page.waitForTimeout(1050)
+      await page.mouse.up()
+      const stepped = await read(page, 't.k.octave')
+      await page.waitForTimeout(300)
+      return [after, jumped, stepped <= 2 && stepped >= 1, await read(page, '[t.k.offset, t.log.length]')]
+    },
+    want: [[5, true, [], ['on 60', 'off 60']], [5, 0], true, [0, 2]] },
+  { what: 'a finger on the strip above the keys drags them sideways, and they settle on a whole octave',
+    setup: SYNTH + `window.t = { k: keyboard(synth, { octave: 4, octaves: 2 }), log }`,
+    async act(page) {
+      const [x, y] = await spot(page, 'k', 0.5, 0.05)
+      const octave = await read(page, 't.k.w / 15 * 7')
+      await finger(page, 'pointerdown', 61, [x, y]); await finger(page, 'pointermove', 61, [x + octave * 0.3, y]); await finger(page, 'pointermove', 61, [x + octave * 0.7, y])
+      const dragging = await read(page, `[Math.round(t.k.offset - ${octave * 0.7}), t.k.octave]`)
+      await finger(page, 'pointerup', 61, [x + octave * 0.7, y])
+      const let_go = await read(page, `[t.k.octave, Math.abs(t.k.offset + ${octave * 0.3}) < 3]`)
+      await page.waitForTimeout(350)
+      return [dragging, let_go, await read(page, '[t.k.octave, t.k.offset, t.log.length]')]
+    },
+    want: [[0, 4], [3, true], [3, 0, 0]] },
   { what: 'when the scene is run again its controls go with it, and its notes are let go',
     setup: SYNTH + `window.t = { k: keyboard(synth), log }
 window.count = () => document.querySelectorAll("#s canvas").length`,
@@ -560,7 +671,7 @@ function faults(r, asked = {}) {
   }
   // Never tiny: on a touch screen no smaller than with a mouse, and with a mouse no smaller than eight tenths.
   if (r.u < (asked.least ?? (r.coarse ? 1 : 0.8)) - 1e-6) wrong.push(`the controls are drawn at ${r.u} of their size`)
-  if (r.coarse && asked.fingers !== false) for (const c of r.controls) if (['dial', 'slider', 'button', 'toggle', 'select'].includes(c.kind) && Math.min(c.whole[2], c.whole[3]) < TOUCH_LEAST) wrong.push(`${name(c)} is ${c.whole.slice(2).map(Math.round)}: too small for a finger`)
+  if (r.coarse && asked.fingers !== false) for (const c of r.controls) if (['dial', 'slider', 'button', 'toggle', 'select', 'rotary'].includes(c.kind) && Math.min(c.whole[2], c.whole[3]) < TOUCH_LEAST) wrong.push(`${name(c)} is ${c.whole.slice(2).map(Math.round)}: too small for a finger`)
   // What does not fit is moved to be seen, not left out of sight: nothing is cut off except where the plates can be moved.
   if (!r.view) for (const c of r.controls) if (!c.at || Math.abs(c.at[3] - c.whole[3]) > 0.5 || Math.abs(c.at[2] - c.whole[2]) > 0.5) wrong.push(`${name(c)} is cut off, and the plates cannot be moved`)
   return wrong
@@ -849,6 +960,23 @@ window.result = "ready"`)
     }
     check(name, 'on a touch screen the controls are bigger, and a tap plays a key and flips a switch', got, [true, 1.15, [60], [], true, true, 'none'])
     await tablet.close()
+  }
+  {
+    // Someone who has asked for less movement: the keys jump to the new octave, as they always did.
+    const calm = await browser.newContext({ viewport: { width: 900, height: 700 }, reducedMotion: 'reduce' })
+    await calm.addInitScript(SILENT)
+    const still = await calm.newPage()
+    await still.goto(`${at}/full.html`)
+    const began = await play(still, TOP + `window.t = { k: keyboard({ octave: 4, octaves: 2 }) }
+await drawn()
+window.result = "ready"`)
+    let got = began
+    if (began === 'ready') {
+      await still.mouse.click(...await spot(still, 'k', 0.98, 0.05))
+      got = await read(still, '[t.k.octave, t.k.offset, matchMedia("(prefers-reduced-motion: reduce)").matches]')
+    }
+    check(name, 'with reduced motion asked for, the keys jump to the new octave', got, [5, 0, true])
+    await calm.close()
   }
   for (const size of Object.keys(SIZES)) await layoutCases(browser, name, size)
   await browser.close()

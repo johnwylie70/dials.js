@@ -6,6 +6,7 @@
  *
  *   const speed = dial("speed", 0, 10)        a number to read: speed.value (or speed * dt)
  *   dial("cutoff", lead, "filter_cutoff")     the dial IS that setting of `lead`: turning it sets it
+ *   rotary("wave", lead, "wave")              a knob that clicks between a few choices
  *   keyboard(lead, { octave: 4 })             piano keys, played by finger, mouse and computer keys
  *   scope(lead)                               the wave `lead` is making, live
  *
@@ -545,6 +546,123 @@ class Select extends Control {
   }
 }
 
+/** A rotary with this many choices or fewer has their names written round it; with more, only the one it is on is named, under it. */
+const ROTARY_NAMED = 8
+/** How far a finger travels from one notch to the next, in points: no less and no more than these, whatever the number of choices. */
+const NOTCH_LEAST = 26
+const NOTCH_MOST = 60
+/** A finger that moved less than this, in points, tapped: on a notch or a name, the knob goes there. */
+const TAP_REACH = 6
+
+/**
+ * THE ROTARY: a knob that clicks between a few fixed places, as the one on a real synth that picks a
+ * waveform or a kind of reverb does. It is a select drawn another way: `value` is the choice, `index`
+ * its place. Turn it by dragging (it holds at each notch until the finger has gone far enough for the
+ * next, then clicks over), or tap a notch or a name to go straight there. Two taps put it back.
+ */
+class Rotary extends Select {
+  scaleOf() { return 1 }
+  stretch() { return [0.9, 1] }
+  get knob() { return sized(this.size, 36, 48, 64) }
+  /** Are the names written round the knob? Not round a small one, and not when there are too many to read. */
+  get named() { return this.choices.length >= 2 && this.choices.length <= ROTARY_NAMED && this.knob >= 44 }
+  /** The most room a name is given at the knob's side, in points before scaling: a bigger knob shows more of each. */
+  get nameRoom() { return this.knob >= 60 ? 72 : 38 }
+  natural(u, room, g) {
+    const across = this.knob * u
+    this.side = 0
+    if (this.named) {
+      g.font = `${10 * u}px ${THEME.font}`
+      for (const choice of this.choices) this.side = Math.max(this.side, g.measureText(String(choice)).width)
+      this.side = Math.min(this.side, this.nameRoom * u) + 8 * u
+    }
+    return [Math.max(76 * u, across + 26 * u + 2 * this.side), across + 50 * u + (this.named ? 22 * u : 0)]
+  }
+  /** Where notch i is round the knob: an angle, from lower left round the top to lower right. */
+  angle(i) {
+    const n = this.choices.length
+    return TAU * 0.375 + TAU * 0.75 * (n > 1 ? i / (n - 1) : 0.5)
+  }
+  /** The middle of the knob: a little lower when names are written round it, to leave room for the one at the top. */
+  centre(u) { return [this.x + this.w / 2, this.y + (this.named ? 26 : 20) * u + (this.h - (this.named ? 46 : 40) * u) / 2] }
+  go(i) {
+    i = clamp(i, 0, this.choices.length - 1)
+    if (i === this.i) return
+    this.i = i
+    this.changed(this.choices[i])
+  }
+  reset() { this.lean = 0; this.go(this.default) }
+  down(p) {
+    this.last = { x: p.x, y: p.y }
+    this.gone = 0 // how far the finger has moved in all: very little is a tap
+    this.pulled = 0 // how far it has gone toward the next notch
+    this.touch()
+  }
+  move(p) {
+    const u = this.u, n = this.choices.length
+    const travel = (this.last.y - p.y) + (p.x - this.last.x)
+    this.gone += Math.hypot(p.x - this.last.x, p.y - this.last.y)
+    this.last.x = p.x; this.last.y = p.y
+    if (n < 2) return
+    // It holds at a notch until the finger is most of the way to the next, then clicks over to it.
+    const notch = clamp(DIAL_TRAVEL / (n - 1), NOTCH_LEAST, NOTCH_MOST) * u
+    this.pulled += travel
+    while (this.pulled > notch * 0.6 && this.i < n - 1) { this.pulled -= notch; this.go(this.i + 1) }
+    while (this.pulled < -notch * 0.6 && this.i > 0) { this.pulled += notch; this.go(this.i - 1) }
+    this.pulled = clamp(this.pulled, this.i > 0 ? -notch * 0.6 : 0, this.i < n - 1 ? notch * 0.6 : 0)
+    // Between clicks the pointer leans a little the way it is being pulled: that is the feel of the detent.
+    this.lean = this.pulled / notch * 0.3
+    this.touch()
+  }
+  up(p) {
+    this.lean = 0
+    if (this.gone < TAP_REACH * this.u) {
+      // A tap on a name goes to it; a tap on the ring of notches goes to the nearest.
+      const u = this.u, [cx, cy] = this.centre(u), r = this.knob * u / 2
+      const name = (this.names || []).find((at) => p.x >= at.x && p.x < at.x + at.w && p.y >= at.y - 8 * u && p.y < at.y + 8 * u)
+      const far = Math.hypot(p.x - cx, p.y - cy)
+      if (name) this.go(name.i)
+      else if (far > r * 0.55 && far < r + 16 * u && this.choices.length > 1) {
+        const turn = ((Math.atan2(p.y - cy, p.x - cx) - TAU * 0.375) % TAU + TAU) % TAU
+        if (turn <= TAU * 0.75 + 0.3 || turn >= TAU - 0.3) this.go(Math.round(clamp(turn > TAU * 0.875 ? 0 : turn / (TAU * 0.75), 0, 1) * (this.choices.length - 1)))
+      }
+    }
+    this.touch()
+  }
+  draw(g, u) {
+    const n = this.choices.length, [cx, cy] = this.centre(u), r = this.knob * u / 2
+    words(g, this.label, cx, this.y + 12 * u, 12 * u, THEME.dim, 'center', '', this.w - 6 * u)
+    g.fillStyle = this.held ? THEME.track : THEME.knob
+    g.beginPath(); g.arc(cx, cy, r - 7 * u, 0, TAU); g.fill()
+    // The notches, the one it is on lit; and the names beside them, where there is room.
+    this.names = []
+    g.lineCap = 'round'
+    for (let i = 0; i < n; i++) {
+      const a = this.angle(i), on = i === this.i, c = Math.cos(a), sn = Math.sin(a)
+      g.strokeStyle = on ? this.accent : THEME.track
+      g.lineWidth = (on ? 3.5 : 2.5) * u
+      g.beginPath(); g.moveTo(cx + c * (r - 3 * u), cy + sn * (r - 3 * u)); g.lineTo(cx + c * (r + 3 * u), cy + sn * (r + 3 * u)); g.stroke()
+      if (!this.named) continue
+      // Left of the knob a name ends at its notch, right of it a name starts there, and at the top it is centred.
+      const side = Math.abs(c) < 0.25 ? 'center' : c < 0 ? 'right' : 'left'
+      const most = side === 'center' ? this.w - 8 * u : this.side - 6 * u
+      const text = String(this.choices[i]), tx = cx + c * (r + 8 * u), ty = cy + sn * (r + 9 * u)
+      g.font = `${on ? '600 ' : ''}${10 * u}px ${THEME.font}`
+      const wide = Math.min(most, g.measureText(text).width)
+      words(g, text, tx, ty, 10 * u, on ? THEME.text : THEME.dim, side, on ? '600' : '', most)
+      this.names.push({ i, x: side === 'left' ? tx : side === 'right' ? tx - wide : tx - wide / 2, y: ty, w: wide, whole: wide < most - 0.01 || g.measureText(text).width <= most + 0.01 })
+    }
+    const a = this.angle(this.i) + (this.lean || 0) * (n > 1 ? TAU * 0.75 / (n - 1) : 0)
+    g.strokeStyle = THEME.text
+    g.lineWidth = 3 * u
+    g.beginPath()
+    g.moveTo(cx + Math.cos(a) * (r - 18 * u), cy + Math.sin(a) * (r - 18 * u))
+    g.lineTo(cx + Math.cos(a) * (r - 9 * u), cy + Math.sin(a) * (r - 9 * u))
+    g.stroke()
+    words(g, String(this.value ?? ''), cx, this.y + this.h - 11 * u, 12 * u, THEME.text, 'center', '600', this.w - 6 * u)
+  }
+}
+
 /** Words. Made just before some controls, it is their heading: the title of the plate they are on. */
 class Label extends Control {
   get value() { return this.label }
@@ -587,6 +705,12 @@ const IS_BLACK = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0]
 /** A white key is never narrower than this, in points: with a mouse, and under a finger. Fewer octaves are shown instead. */
 const KEY_LEAST = 14
 const KEY_LEAST_FINGER = 22
+/** How long the keys take to slide to a new octave, in milliseconds; an arrow held down steps again after the first wait, then at each of the next. */
+const KEY_SLIDE_MS = 220
+const KEY_HOLD_MS = 450
+const KEY_AGAIN_MS = 240
+/** Someone who has asked their computer for less movement gets none: the keys jump. */
+const stillness = () => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches } catch (e) { return false } }
 /** How hard the computer's keys play, 0 to 1. */
 const KEY_VELOCITY = 0.8
 
@@ -606,6 +730,10 @@ class Keyboard extends Control {
     this.sounding = null
     this.heard = ''
     this.many = true
+    this.animate = spec.animate !== false
+    this.slid = null // the keys sliding to a new octave: { from: how far across they started, at: when }
+    this.pull = null // a finger on the strip above the keys, dragging them sideways
+    this.arrow = null // an arrow held down: it steps again and again
   }
   /** Made outside any group, and not placed by hand, it lies along the bottom. */
   get docked() { return !this.box && !this.at }
@@ -615,8 +743,19 @@ class Keyboard extends Control {
     n = clamp(Math.round(n), 0, 8)
     if (n === this.first) return
     this.release()
+    // The keys slide to the new octave: they start where they were, which is so many octaves across from where they will be.
+    const across = this.offset + (n - this.first) * 7 * (this.w / (7 * this.span(this.u) + 1) || 0)
     this.first = n
+    this.pull = null
+    this.slid = this.animate && across && !stillness() ? { from: across, at: performance.now() } : null
     this.touch()
+  }
+  /** How far across the keys are drawn from where they belong, in points: not 0 only while they slide or are dragged. */
+  get offset() {
+    if (this.pull) return this.pull.by
+    if (!this.slid) return 0
+    const t = (performance.now() - this.slid.at) / KEY_SLIDE_MS
+    return t >= 1 ? 0 : this.slid.from * Math.pow(1 - t, 3)
   }
   get value() { return this.first }
   set value(n) { this.octave = n }
@@ -673,25 +812,31 @@ class Keyboard extends Control {
   noteAt(p, u) {
     const s = this.shape(u)
     if (p.x < this.x || p.x >= this.x + this.w || p.y < s.top || p.y > this.y + this.h) return null
-    const across = (p.x - this.x) / s.each
+    // Where the keys are drawn now: while they slide, the key under the finger is the one played.
+    const across = (p.x - this.x - this.offset) / s.each
     const white = Math.floor(across)
+    const of = (i) => this.low + 12 * Math.floor(i / 7) + WHITE[((i % 7) + 7) % 7]
     const hard = clamp(0.35 + 0.65 * (p.y - s.top) / s.tall, 0.35, 1)
+    let note = of(white), struck = hard
     if (p.y < s.top + s.tall * 0.62) {
       // A black key lies over the join between two white ones.
       const join = Math.round(across)
-      if (join > 0 && join < s.whites && Math.abs(across - join) < 0.3) {
-        const below = this.low + 12 * Math.floor((join - 1) / 7) + WHITE[(join - 1) % 7]
-        if (IS_BLACK[(below + 1) % 12]) return { note: below + 1, hard: clamp(0.35 + 0.65 * (p.y - s.top) / (s.tall * 0.62), 0.35, 1) }
+      if (Math.abs(across - join) < 0.3 && IS_BLACK[(((of(join - 1) + 1) % 12) + 12) % 12] && (this.offset || (join > 0 && join < s.whites))) {
+        note = of(join - 1) + 1
+        struck = clamp(0.35 + 0.65 * (p.y - s.top) / (s.tall * 0.62), 0.35, 1)
       }
     }
-    return { note: this.low + 12 * Math.floor(white / 7) + WHITE[white % 7], hard }
+    return note >= 0 && note <= 127 ? { note, hard: struck } : null
   }
   down(p) {
     const u = this.u, s = this.shape(u)
     if (p.y < s.top) {
-      // The strip: its left end steps down an octave, its right end up.
-      if (p.x < this.x + 64 * u) this.step(-1)
-      else if (p.x > this.x + this.w - 64 * u) this.step(1)
+      // The strip: its left end steps down an octave, its right end up, again and again while it is held.
+      // A finger on the rest of it drags the keys sideways, and they settle on a whole octave when it lifts.
+      const by = p.x < this.x + 64 * u ? -1 : p.x > this.x + this.w - 64 * u ? 1 : 0
+      if (by) { this.arrow = { id: p.id, by, next: performance.now() + KEY_HOLD_MS }; this.step(by) }
+      else if (!this.pull) this.pull = { id: p.id, from: p.x, by: this.offset }
+      this.slid = by ? this.slid : null
       return
     }
     const at = this.noteAt(p, u)
@@ -700,6 +845,13 @@ class Keyboard extends Control {
     this.press(at.note, at.hard)
   }
   move(p) {
+    if (this.pull && this.pull.id === p.id) {
+      // No further than the lowest and the highest octave there is.
+      const octave = 7 * this.shape(this.u).each
+      this.pull.by = clamp(p.x - this.pull.from, (this.first - 8) * octave, this.first * octave)
+      this.touch()
+      return
+    }
     if (!this.fingers.has(p.id)) return
     const was = this.fingers.get(p.id)
     const at = this.noteAt(p, this.u)
@@ -711,6 +863,18 @@ class Keyboard extends Control {
     this.fingers.set(p.id, now)
   }
   up(p) {
+    if (this.arrow && this.arrow.id === p.id) this.arrow = null
+    if (this.pull && this.pull.id === p.id) {
+      // Let go: the keys settle on the nearest whole octave.
+      const by = this.pull.by, octave = 7 * this.shape(this.u).each
+      const next = clamp(this.first - Math.round(by / octave), 0, 8), was = this.first
+      this.pull = null
+      if (next !== was) { this.release(); this.first = next; this.panel.told.push(this.id, next) }
+      const across = by + (next - was) * octave
+      this.slid = this.animate && across && !stillness() ? { from: across, at: performance.now() } : null
+      this.touch()
+      return
+    }
     const was = this.fingers.get(p.id)
     this.fingers.delete(p.id)
     if (was != null) this.release(was)
@@ -741,6 +905,9 @@ class Keyboard extends Control {
   }
   /** Each frame: the notes the target says are sounding (a song playing, a held pedal) are lit too. */
   frame() {
+    // Cheap when nothing moves: only a keyboard that is sliding, or whose arrow is held, is drawn again.
+    if (this.slid) { if (performance.now() - this.slid.at >= KEY_SLIDE_MS) this.slid = null; this.touch() }
+    if (this.arrow && performance.now() >= this.arrow.next) { this.arrow.next = performance.now() + KEY_AGAIN_MS; this.step(this.arrow.by) }
     const ask = method(this.target, 'notes')
     if (!ask) return
     const now = ask()
@@ -758,25 +925,30 @@ class Keyboard extends Control {
     words(g, '‹', this.x + 14 * u, this.y + s.strip / 2 - 2 * u, 20 * u, this.accent)
     words(g, '›', this.x + this.w - 14 * u, this.y + s.strip / 2 - 2 * u, 20 * u, this.accent)
     words(g, `C${this.first} to C${this.first + span}`, this.x + this.w / 2, this.y + s.strip / 2 - 2 * u, 12 * u, THEME.dim)
-    for (let i = 0; i < s.whites; i++) {
-      const note = low + 12 * Math.floor(i / 7) + WHITE[i % 7]
-      const x = this.x + i * s.each
+    // The keys, where they are now: across by `offset` while they slide, with those coming in from the side drawn too.
+    const offset = this.offset
+    const from = offset ? Math.floor(-offset / s.each) - 1 : 0, to = offset ? from + s.whites + 2 : s.whites
+    const of = (i) => low + 12 * Math.floor(i / 7) + WHITE[((i % 7) + 7) % 7]
+    for (let i = from; i < to; i++) {
+      const note = of(i)
+      if (note < 0 || note > 127) continue
+      const x = this.x + offset + i * s.each
       g.fillStyle = lit(note) || THEME.white
       rounded(g, x + 1, s.top, s.each - 2, s.tall, 4 * u)
       g.fill()
-      const hint = hints && KEY_HINTS[note - low]
+      const hint = hints && !offset && KEY_HINTS[note - low]
       if (hint) words(g, hint, x + s.each / 2, s.top + s.tall - 13 * u, 11 * u, '#7b8190')
-      else if (i % 7 === 0 && s.each >= 18 * u) words(g, `C${this.first + i / 7}`, x + s.each / 2, s.top + s.tall - 13 * u, 10 * u, '#7b8190')
+      else if (((i % 7) + 7) % 7 === 0 && s.each >= 18 * u) words(g, `C${this.first + Math.floor(i / 7)}`, x + s.each / 2, s.top + s.tall - 13 * u, 10 * u, '#7b8190')
     }
     const wide = s.each * 0.58, tall = s.tall * 0.62
-    for (let i = 0; i < s.whites - 1; i++) {
-      const note = low + 12 * Math.floor(i / 7) + WHITE[i % 7] + 1
-      if (!IS_BLACK[note % 12]) continue
-      const x = this.x + (i + 1) * s.each - wide / 2
+    for (let i = from; i < to - 1; i++) {
+      const note = of(i) + 1
+      if (note < 0 || note > 127 || !IS_BLACK[note % 12]) continue
+      const x = this.x + offset + (i + 1) * s.each - wide / 2
       g.fillStyle = lit(note) || THEME.black
       rounded(g, x, s.top, wide, tall, 3 * u)
       g.fill()
-      const hint = hints && KEY_HINTS[note - low]
+      const hint = hints && !offset && KEY_HINTS[note - low]
       if (hint) words(g, hint, x + wide / 2, s.top + tall - 11 * u, 10 * u, lit(note) ? THEME.well : '#9aa2b1')
     }
   }
@@ -936,7 +1108,7 @@ class Meter extends Control {
   }
 }
 
-const KINDS = { dial: Dial, slider: Slider, button: Button, toggle: Toggle, select: Select, label: Label, keyboard: Keyboard, scope: Scope, meter: Meter, spacer: Spacer }
+const KINDS = { dial: Dial, slider: Slider, button: Button, toggle: Toggle, select: Select, rotary: Rotary, label: Label, keyboard: Keyboard, scope: Scope, meter: Meter, spacer: Spacer }
 
 // --------------------------------------------------------------------------------------------
 /**
@@ -1224,6 +1396,8 @@ class Panel {
     spec = spelled(spec || {})
     this.arrange = true
     if (BOXES.includes(kind)) return this.addBox(kind, spec)
+    // select("wave", …, { style: "rotary" }) is rotary("wave", …).
+    if (kind === 'select' && spec.style === 'rotary') kind = 'rotary'
     const Kind = KINDS[kind]
     if (!Kind) throw new Error(`There is no control called "${kind}". There are: ${[...Object.keys(KINDS), ...BOXES].join(', ')}`)
     const item = new Kind(this, kind, spec)
@@ -2309,6 +2483,8 @@ function api(panel) {
     slider: make('slider', ranged),
     toggle: make('toggle', toggled),
     select: make('select', selected),
+    /** A knob that clicks between a few places: rotary("mode", ["room", "hall", "plate"], "hall") or rotary("wave", lead, "wave"). */
+    rotary: make('rotary', selected),
     scope: make('scope', sourced),
     meter: make('meter', sourced),
     /** button("fire"), button("fire", onPress), button("fire", { onPress, onRelease }). */
@@ -2417,6 +2593,7 @@ const slider = (...args) => dials().slider(...args)
 const button = (...args) => dials().button(...args)
 const toggle = (...args) => dials().toggle(...args)
 const select = (...args) => dials().select(...args)
+const rotary = (...args) => dials().rotary(...args)
 const keyboard = (...args) => dials().keyboard(...args)
 const scope = (...args) => dials().scope(...args)
 const meter = (...args) => dials().meter(...args)
@@ -2432,4 +2609,4 @@ const layout = (options) => dials().layout(options)
 const room = () => dials().room()
 const over = (x, y) => dials().over(x, y)
 
-export { dials, dial, slider, button, toggle, select, keyboard, scope, meter, label, group, row, column, grid, page, spacer, wrap, layout, room, over, theme, version }
+export { dials, dial, slider, button, toggle, select, rotary, keyboard, scope, meter, label, group, row, column, grid, page, spacer, wrap, layout, room, over, theme, version }
