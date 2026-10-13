@@ -1242,6 +1242,7 @@ function api(panel) {
     layout: (options) => { Object.assign(panel.options, options); panel.arrange = true },
     /** Is a control at this point? A game asks before it treats a click as its own. */
     over: (x, y) => { if (typeof x === 'object') ({ x, y } = x); return !!panel.under(x, y) },
+    theme: (colours) => theme(colours),
     /** Take every control away. */
     clear: () => { for (const item of [...panel.items]) panel.remove(item) },
     get all() { return [...panel.items] },
