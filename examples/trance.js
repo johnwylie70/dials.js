@@ -4,7 +4,7 @@
 //
 // Run it:   pictures run trance.js     (dials.js sits beside this file)
 
-const { gatePattern, arpPattern, number, toggle, row } = await use("dials.js")
+const { tranceGate, arpPattern, number, toggle, row } = await use("dials.js")
 const { makeSynth } = await use("standin-synth.js")   // a stand-in until synths.js is ready: then delete this line
 
 const pad = makeSynth({ wave: "saw", attack: 0.01, release: 0.2, filter_cutoff: 1800 })
@@ -14,7 +14,7 @@ const chord = [57, 60, 64, 67]                         // A, C, E and G: the not
 const tempo = number("tempo", 80, 180, 138, { unit: "bpm" })
 const playing = toggle("play", false)
 row()
-const gate = gatePattern("gate", "x.x.xxx.x.x.x5x.")
+const gate = tranceGate("gate", "x.x.xxx.x.x.x5x.")
 row()
 const arp = arpPattern("arp", "1 3 2 4 3' 2 4^ 1'")
 

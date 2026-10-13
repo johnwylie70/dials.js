@@ -34,7 +34,8 @@ const server = createServer(async (req, res) => {
   if (path === '/framed.html') return res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><body style="margin:0;overflow:hidden"><iframe sandbox="allow-scripts" src="/full.html" style="position:absolute;left:40px;top:30px;width:700px;height:500px;border:0"></iframe>')
   let body
   // pictures.js itself, and what it loads, come from its own repository; everything else from this one.
-  const file = path.startsWith('/pictures/') ? join(PICTURES, path.slice(10)) : join(ROOT, path)
+  // (pictures.js has a copy of this library built in, and gives a scene its controls from it: these tests are of the one that is here.)
+  const file = path === '/pictures/dials/dials.js' ? join(ROOT, 'dials.js') : path.startsWith('/pictures/') ? join(PICTURES, path.slice(10)) : join(ROOT, path)
   try { body = await readFile(file) } catch { return res.writeHead(404).end() }
   res.writeHead(200, { 'content-type': TYPES[extname(path)] || 'application/octet-stream', 'access-control-allow-origin': '*' }).end(body)
 })

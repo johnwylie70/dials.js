@@ -5,10 +5,10 @@
  */
 
 /** The names a scene is given besides the first part's. */
-export const MORE = 'const { number, stepper, textBox, readout, checkbox, choose, radio, dropdown, xyPad, colourPicker, colorPicker, progress, light, busy, rangeSlider, fader, joystick, dpad, actionButton, envelope, stepGrid, pads, wheel, modWheel, pitchWheel, steps, gatePattern, arpPattern, drumSeq } = lib\n'
+export const MORE = 'const { number, stepper, textBox, readout, checkbox, choose, radio, dropdown, xyPad, colourPicker, colorPicker, progress, light, busy, rangeSlider, fader, joystick, dpad, actionButton, envelope, stepGrid, pads, wheel, modWheel, pitchWheel, steps, tranceGate, arpPattern, drumSeq } = lib\n'
 
 /** The kinds of this part: at every size each is asked to draw, and must keep to its own box. */
-export const MORE_KINDS = ['number', 'textBox', 'readout', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'progress', 'light', 'busy', 'rangeSlider', 'fader', 'joystick', 'dpad', 'actionButton', 'envelope', 'stepGrid', 'pads', 'wheel', 'steps', 'gatePattern', 'arpPattern', 'drumSeq']
+export const MORE_KINDS = ['number', 'textBox', 'readout', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'progress', 'light', 'busy', 'rangeSlider', 'fader', 'joystick', 'dpad', 'actionButton', 'envelope', 'stepGrid', 'pads', 'wheel', 'steps', 'tranceGate', 'arpPattern', 'drumSeq']
 /** Those a finger works: on a touch screen none is smaller than a finger. */
 export const MORE_TOUCHED = ['number', 'textBox', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'rangeSlider', 'fader', 'joystick', 'dpad', 'actionButton', 'envelope', 'pads', 'wheel']
 
@@ -140,14 +140,14 @@ g.clear(); p.hit("snare", 0.5); p.lift("snare"); p.flash("hat")
 window.result = [...first, g.row(0), p.notes, q.names.length, q.columns, log, [w.min, w.max, w.value, w.spring, w.vertical], [m.value, m.spring]]`,
     want: [[[1, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0.5, 0, 0, 0]], 1, 0.5, [0, 0, 0, 0, 0.5, 0, 0, 0], 1, [[1, 0, 0, 1], [0, 0.5, 0, 0]], ['1', '2'], [0, 0, 0, 0, 0, 0, 0, 0], [36, 38, 42, 39], 6, 3, ['on 38 0.5', 'off 38'], [-1, 1, 0, true, true], [64, false]] },
   { what: 'a pattern is a list and is the text the sound engine reads, and either may be set: a lane of steps, a gate with levels in ninths, an arpeggio with rests, ties, octaves, accents, slides and lengths, a built-in pattern by its name, and a drum sequencer with a line for each drum',
-    source: `const lane = steps("accent", 8), gate = gatePattern("gate", "x.5.9..3"), arp = arpPattern("arp", "1 - 3 2 _ 1^ ~3 5':4"), seq = drumSeq(["kick", "snare"], { steps: 8 })
+    source: `const lane = steps("accent", 8), gate = tranceGate("gate", "x.5.9..3"), arp = arpPattern("arp", "1 - 3 2 _ 1^ ~3 5':4"), seq = drumSeq(["kick", "snare"], { steps: 8 })
 lane.text = "x..x|x.X."; seq.text = "kick: x...x...\\nsnare: ..X...x."
 const first = [lane.value, lane.steps[6], lane.length, gate.value.map((v) => Math.round(v * 9)), gate.text, gate.length, arp.text, arp.value[4], arp.value[7], arp.value[6].slide, arp.value[1].note, seq.value, seq.text, seq.steps[1][2].accent]
 lane.value = [1, 0, 0.5, true]; gate.put(1, 3 / 9); arp.value = [1, 0, "2'", { note: 3, octave: -1, accent: true, length: 6 }, "~4"]; seq.put("snare", 0, true); seq.pattern = "backbeat"
 const set = [lane.text, lane.length, gate.text, arp.text, arp.length, seq.get("kick", 0), seq.text.split("\\n")[1]]
 gate.text = "pump"; arp.text = "acid"; arp.length = 6
 // A gate's text has no accents: an X handed to one is a step that is on, and no more. A lane's has.
-const plain = gatePattern("plain", "X.x|x"), marked = steps("marked", "X.x|x")
+const plain = tranceGate("plain", "X.x|x"), marked = steps("marked", "X.x|x")
 window.result = [...first, ...set, gate.text, gate.length, arp.text, arp.rows, plain.text, plain.steps[0].accent, marked.text]`,
     want: [[1, 0, 0, 1, 1, 0, 1, 0], { on: true, level: 1, accent: true }, 8, [9, 0, 5, 0, 9, 0, 0, 3], 'x.5.x..3', 8, "1 - 3 2 _ 1^ ~3 5':4", { note: 0, octave: 0, tie: true, accent: false, slide: false, length: 0 }, { note: 5, octave: 1, tie: false, accent: false, slide: false, length: 4 }, true, 0,
       [[1, 0, 0, 0, 1, 0, 0, 0], [0, 0, 1, 0, 0, 0, 1, 0]], 'x...x...\n..X...x.', true, 'x.5x', 4, 'x35.x..3', "1 - 2' 3,^:6 ~4", 5, 1, '....X...', '2468246824682468', 16, "1^ 1 ~3 - 1' ~1", 8, 'x.xxx', false, 'X.xx'] },
@@ -155,7 +155,7 @@ window.result = [...first, ...set, gate.text, gate.length, arp.text, arp.rows, p
     source: `const P = { gatePattern: { kind: "pattern", steps: 24, patterns: { mine: "xx..", pump: "2468" } }, gateDepth: { min: 0, max: 1 }, gateRate: { min: 0.25, max: 16 }, gateStereo: { kind: "bool" }, arpPattern: { kind: "pattern", steps: 32 } }
 // As a synth keeps them: get() is always the text ("" for none), and the step that is sounding is a setting to read.
 const lead = { v: { gatePattern: "x.x.", gateDepth: 0.5, gateRate: 4, gateStereo: 0, arpPattern: "", levels: [1, 0, 0.5], gateStep: 2, arpStep: -1 }, describe: (n) => P[n], get(n) { return this.v[n] }, set(n, x) { this.v[n] = x } }
-const gate = gatePattern("gate", lead), arp = arpPattern(lead), list = steps("levels", lead, "levels")
+const gate = tranceGate("gate", lead), arp = arpPattern(lead), list = steps("levels", lead, "levels")
 await drawn()
 const beside = dials().all.map((c) => c.kind + " " + c.label)
 const first = [gate.text, gate.lane.most, gate.step, arp.text, arp.step, lead.v.arpPattern, list.value, beside, dials().all[1].choices]
@@ -164,7 +164,7 @@ const wrote = [lead.v.gatePattern, lead.v.arpPattern, lead.v.levels]
 lead.v.gatePattern = "x..5..x."; lead.v.gateStep = 5; lead.v.arpPattern = "trance"; lead.v.arpStep = 3
 await drawn()
 window.result = [...first, wrote, gate.text, gate.length, gate.step, arp.text, arp.step]`,
-    want: ['x.x.', 24, 2, '1 2 3 4', -1, '', [1, 0, 0.5], ['gatePattern ', 'select pattern', 'dial depth', 'dial rate', 'toggle stereo', 'arpPattern ', 'select pattern', 'steps levels'], ['yours', 'mine', 'pump'], ['xx..', '1 2 3 2', [1, 1, 0.5]], 'x..5..x.', 8, 5, '1^ - 3 2 - 1^ 3 -', 3] },
+    want: ['x.x.', 24, 2, '1 2 3 4', -1, '', [1, 0, 0.5], ['tranceGate ', 'select pattern', 'dial depth', 'dial rate', 'toggle stereo', 'arpPattern ', 'select pattern', 'steps levels'], ['yours', 'mine', 'pump'], ['xx..', '1 2 3 2', [1, 1, 0.5]], 'x..5..x.', 8, 5, '1^ - 3 2 - 1^ 3 -', 3] },
   { what: 'a drum sequencer plays by itself: each step that is on is handed to its row\'s target a little before it is due, with the time it is to sound, in order, swung and not when muted; and the column that is lit follows the clock',
     source: `const log = [], heard = []
 const clock = { t: 10, time() { return this.t } }
@@ -517,7 +517,7 @@ window.t = { g: stepGrid("drums", 8, ["kick", "snare"], { onChange: (row, step, 
     want: [0.5, 0, 40] },
   { what: 'a gate\'s steps are tapped on and off, set by how high the finger is and drawn across; its length is changed with the − and +; an arpeggio\'s cell is tapped for a note and again for a rest, dragged sideways to hold it on, and in the lanes under the grid given an accent, a slide, an octave and a length of its own',
     setup: `const heard = []
-window.t = { g: gatePattern("gate", 8, { onChange: () => heard.push(t.g.text) }), a: arpPattern("arp", "1 2 3 4"), heard,
+window.t = { g: tranceGate("gate", 8, { onChange: () => heard.push(t.g.text) }), a: arpPattern("arp", "1 2 3 4"), heard,
   bar: (i, down) => { const c = t.g.spotOf(i, t.g.u), b = canvas.getBoundingClientRect(); return [b.left + c.x + c.w / 2, b.top + c.y + c.h * down] },
   cell: (i, row) => { const s = t.a.grid(t.a.u), b = canvas.getBoundingClientRect(); return [b.left + s.x + (i + 0.5) * s.w, b.top + (row < 0 ? s.under + (-row - 1) * 24 * t.a.u + 11 * t.a.u : s.y + (t.a.rows - 1 - row + 0.5) * s.h)] },
   count: (c, side) => { const b = canvas.getBoundingClientRect(); return [b.left + c.x + c.w - (side < 0 ? 73 : 19) * c.u, b.top + c.y + 13 * c.u] } }`,
@@ -611,7 +611,7 @@ envelope("shape"); pitchWheel("bend"); modWheel("mod")
 row()
 label("beat")
 stepGrid("drums", 16, ["kick", "snare", "hat"]); pads("kit", ["kick", "snare", "hat", "clap"])`,
-  patterns: `gatePattern("gate", "x.x.x5x.X.3.xx..")
+  patterns: `tranceGate("gate", "x.x.x5x.X.3.xx..")
 row()
 arpPattern("arp", "1 - 3 2 _ 1^ ~3 2':5")
 row()
