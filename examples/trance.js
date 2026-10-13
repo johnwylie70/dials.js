@@ -16,7 +16,7 @@ const playing = toggle("play", false)
 row()
 const gate = gatePattern("gate", "x.x.xxx.x.x.x5x.")
 row()
-const arp = arpPattern("arp", "1 3 2 4 3^ 2 4! 1^")
+const arp = arpPattern("arp", "1 3 2 4 3' 2 4^ 1'")
 
 let time = 0, step = -1, on = false, held = null
 
