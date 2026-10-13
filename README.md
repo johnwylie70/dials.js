@@ -116,7 +116,7 @@ The scenes in `examples/` run from a copy of this repository with nothing else i
 
 ## Laying it out
 
-**There is nothing to do.** Controls line up in the order you make them, on a plate, with the keyboard along the bottom. On a narrow screen the line wraps evenly (six dials are three and three, never five and one), on a touch screen everything is a little bigger, and when the picture changes size it is all laid out again. Controls are drawn a little smaller before a line has to wrap, but never tiny: when there is more than fits, the plates can be moved with a finger, the mouse wheel or the bar beside them, while the keyboard and the scope above it stay where they are. On a phone on its side, where there is very little height, the scope is put away and the keyboard keeps to its share.
+**There is nothing to do.** Controls line up in the order you make them, on a plate, with the keyboard along the bottom. On a narrow screen the line wraps evenly (six dials are three and three, never five and one), on a touch screen everything is a little bigger, and when the picture changes size it is all laid out again. Controls are drawn a little smaller before a line has to wrap, but never tiny: when there is more than fits, the plates can be moved: with a finger (they carry on a little when it lets go), the mouse wheel, a trackpad or the thin bar beside them, while the keyboard and the scope above it stay where they are. A drag that starts on a dial turns the dial; one that starts on a plate's title, on words or between the plates moves them, passing over dials without turning any; and on a slider that lies across, a finger going along it moves the slider and one going up or down moves the plates. On a phone on its side, where there is very little height, the scope is put away and the keyboard keeps to its share.
 
 **A label is a heading.** A `label` made just before some controls is the title of their plate, and they are kept together: a plate moves to the next line whole, never leaving its heading behind. Plates with titles fill the width: they stand side by side, as many to a line as fit, every line reaching both edges, and `row()` says where a line should end when one has to. This is a whole synth panel, and it needs nothing else:
 
@@ -195,6 +195,8 @@ label("reverb"); dial("reverb", lead, "reverb"); dial("size", lead, "reverb_size
 scope(lead)
 keyboard(lead)
 ```
+
+`layout({ fit: "width" })` is the same, and also draws the panel bigger where there is room to spare, so that the widest row reaches both edges: no bigger than `maxScale` (1.6 unless you say), and no bigger than still fits the height.
 
 Under a finger the panel is not drawn smaller than eight tenths of its size, which is as small as is comfortable to touch (with a mouse, half). If the rows are still too wide they are left that size and moved from side to side. You choose the floor: `layout({ wrap: false, minScale: 1 })` never shrinks at all, and `minScale: 0` shrinks as far as it takes.
 
@@ -320,7 +322,7 @@ Every control takes a last `{ … }` of options. All of them take `x` and `y` (t
 | `meter(source)` | A level from 0 to 1 as a bar of lights: a target with `level()`, a function, or `level.value = 0.7`. `[left, right]` makes two bars. |
 | `label(text)` | Words. Made just before some controls, it is their heading. |
 | `group`, `row`, `column`, `grid`, `page`, `spacer`, `wrap` | What goes with what: see [Laying it out](#laying-it-out). |
-| `layout({ at: "bottom" })` | Where the plates go (`"top"`, `"bottom"`, `"left"`, `"right"`), `scale`, `wrap`, `minScale`, `columns`, `size`, `margin`, `compact`, `dividers`, `plates`, `align`, `backdrop` (true, false or a colour), `image` and `onResize`. It gives back `{ width, height, scale }`. |
+| `layout({ at: "bottom" })` | Where the plates go (`"top"`, `"bottom"`, `"left"`, `"right"`), `scale`, `wrap`, `fit`, `minScale`, `maxScale`, `columns`, `size`, `margin`, `compact`, `dividers`, `plates`, `align`, `backdrop` (true, false or a colour), `image` and `onResize`. It gives back `{ width, height, scale }`. |
 | `room()` | The rectangle no control is on: `{ x, y, width, height }`. |
 | `theme({ accent: "deepskyblue" })` | The colours. |
 | `over(x, y)` | Is a control (or a tab, or the bar beside plates that can be moved) at this point? A game asks before it treats a click as its own. |
@@ -334,6 +336,7 @@ A control can be tied to anything. No library is named: a target is known by wha
 | | |
 |---|---|
 | `set(name, value)`, `get(name)` | Without them the control reads and writes `target[name]`, so a plain object is a target: `dial("size", ball, "radius", { min: 5, max: 80 })`. |
+| `onChange(fn)` | `fn(name)` is called when what `describe(name)` says has changed (a list of devices that grew, a range that moved): the control asks again, keeps its choice if it is still there, and is laid out again. With no name, every setting. If it gives back a function, that is called when the control goes. |
 | `describe(name)` | `{ min, max, default, unit, step, digits, kind, choices, name }`. `kind` is `"float"`, `"int"`, `"bool"` or `"choice"`; `choices` is a list, or names joined by `\|`. |
 | `noteOn(note, velocity)`, `noteOff(note)` | What a keyboard plays. `note` is a MIDI number, `velocity` is from 0 to 1. |
 | `notes()` | The notes sounding now: a keyboard lights them. |
