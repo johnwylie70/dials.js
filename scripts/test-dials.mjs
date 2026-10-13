@@ -4,7 +4,7 @@
  * `result` for the test to compare; then controls are turned, pressed and played with a real
  * mouse, the keyboard and several fingers at once; then every example is run for a moment.
  *
- *   PLAYWRIGHT=/path/to/node_modules/playwright node scripts/test-controls.mjs
+ *   PLAYWRIGHT=/path/to/node_modules/playwright node scripts/test-dials.mjs
  *
  * pictures.js is taken from the folder beside this repository (or PICTURES=/path/to/pictures.js).
  * Chromium, and WebKit when Playwright has it. `--shots` also saves a picture of each example in
@@ -36,8 +36,8 @@ await new Promise((done) => server.listen(0, done))
 const at = `http://localhost:${server.address().port}`
 
 // Every scene starts with these: the library, and a way to wait for the controls to be laid out and drawn.
-const TOP = `const lib = await use("/controls.js")
-const { dial, slider, button, toggle, select, keyboard, scope, meter, label, row, layout, over, controls, theme } = lib
+const TOP = `const lib = await use("/dials.js")
+const { dial, slider, button, toggle, select, keyboard, scope, meter, label, row, layout, over, dials, theme } = lib
 const drawn = async () => { await frame(); await frame(); await frame() }
 `
 // Run a scene on the page as it is now; what it left in `result`, or its error.
@@ -111,7 +111,7 @@ window.result = [...first, c.x, c.y, over(25, 255), over(600, 300)]`,
 for (let i = 0; i < 28; i++) made.push(dial("d" + i, 0, 1))
 const piano = keyboard()
 await drawn()
-window.result = [controls().panel.u < 1, made.every((c) => c.y + c.h <= piano.y && c.y >= 0)]`,
+window.result = [dials().panel.u < 1, made.every((c) => c.y + c.h <= piano.y && c.y >= 0)]`,
     want: [true, true] },
   { what: 'the controls are drawn on a canvas of their own, exactly over the scene\'s, and the scene\'s is left alone',
     source: `background("rgb(0, 0, 255)")
@@ -156,14 +156,14 @@ await sleep(0.4)
 window.result = [...high, b.bars[0] < 0.8 && b.bars[0] > 0, b.peaks[0], c.label]`,
     want: [0.5, 1, '0.5,0.25', true, 1, 'out'] },
   { what: 'the library can be made from its text alone, as a host with no modules does (Python\'s page)',
-    source: `const text = await (await fetch("/controls.js")).text()
+    source: `const text = await (await fetch("/dials.js")).text()
 const made = new Function(text.replace("export {", "return {"))()
-const d = made.controls(canvas).dial("a", 0, 4, 3)
+const d = made.dials(canvas).dial("a", 0, 4, 3)
 window.result = [Object.keys(made).length > 10, d.value, made.version]`,
     want: [true, 3, '0.0.0'] },
   { what: 'a host is told what was made from a target, and is called every frame only when it asks and answers',
     source: `const heard = []
-const api = controls()
+const api = dials()
 api.listen((e) => heard.push(e))
 api.make("dial", 7, { target: { describe: () => ({ min: 2, max: 9, default: 4 }), at: 5, get() { return this.at }, set(name, value) { this.at = value } }, param: "x" })
 api.make("scope", 8, {})
@@ -240,7 +240,7 @@ t.d.value = 80; t.s.value = 9`,
     },
     want: [30, 4] },
   { what: 'a slider comes to a click on its track, and is dragged from its handle; an upright one runs upward',
-    setup: `window.t = { s: slider("a", 0, 100, 0, { size: 200 }), v: slider("b", 0, 100, 0, { vertical: true, size: 100 }), api: controls() }`,
+    setup: `window.t = { s: slider("a", 0, 100, 0, { size: 200 }), v: slider("b", 0, 100, 0, { vertical: true, size: 100 }), api: dials() }`,
     async act(page) {
       const box = await read(page, '({ u: t.api.panel.u })')
       let [x, y] = await spot(page, 's', 0, 1)
@@ -356,7 +356,7 @@ const check = (browser, what, got, want) => {
   if (!ok) console.log(`       got  ${JSON.stringify(got)}\n       want ${JSON.stringify(want)}`)
 }
 
-const examples = (await readdir(join(ROOT, 'examples'))).filter((f) => f.endsWith('.js') && !['controls.js', 'standin-synth.js'].includes(f)).sort()
+const examples = (await readdir(join(ROOT, 'examples'))).filter((f) => f.endsWith('.js') && !['dials.js', 'standin-synth.js'].includes(f)).sort()
 if (SHOTS) await mkdir(join(ROOT, 'shots'), { recursive: true })
 
 for (const name of ['chromium', 'webkit']) {
@@ -414,7 +414,7 @@ for (const name of ['chromium', 'webkit']) {
     const touch = await tablet.newPage()
     await touch.goto(`${at}/full.html`)
     const began = await play(touch, TOP + `const log = []
-window.t = { g: toggle("mute"), k: keyboard({ octave: 4, octaves: 2, onNoteOn: (note) => log.push(note) }), log, api: controls() }
+window.t = { g: toggle("mute"), k: keyboard({ octave: 4, octaves: 2, onNoteOn: (note) => log.push(note) }), log, api: dials() }
 await drawn()
 window.result = "ready"`)
     let got = began

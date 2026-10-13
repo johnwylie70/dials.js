@@ -2,9 +2,9 @@
 // ball, a toggle leaves a trail, and the scope draws the ball's height as it goes.
 // Try changing: the ranges of the dials; what the button does; push the ball's speed to the scope.
 //
-// Run it:   pictures run bounce.js     (controls.js sits beside this file)
+// Run it:   pictures run bounce.js     (dials.js sits beside this file)
 
-const { dial, button, toggle, scope, layout } = await use("controls.js")
+const { dial, button, toggle, scope, layout } = await use("dials.js")
 
 layout({ at: "bottom" })
 const gravity = dial("gravity", 0, 2000, 900)

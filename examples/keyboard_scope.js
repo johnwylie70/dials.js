@@ -2,9 +2,9 @@
 // Play with a finger (several at once), the mouse, or the keys A S D F G H J and W E T Y U.
 // Try changing: octaves: 2 to 3; the colours; what is drawn for a note.
 //
-// Run it:   pictures run keyboard_scope.js     (controls.js sits beside this file)
+// Run it:   pictures run keyboard_scope.js     (dials.js sits beside this file)
 
-const { keyboard, scope, meter } = await use("controls.js")
+const { keyboard, scope, meter } = await use("dials.js")
 const { makeSynth } = await use("standin-synth.js")   // a stand-in until synths.js is ready: then delete this line
 
 const lead = makeSynth({ wave: "triangle" })

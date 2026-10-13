@@ -1,14 +1,14 @@
 {
-  "name": "controls.js",
+  "name": "dials.js",
   "version": "0.0.0",
   "description": "Dials, sliders, buttons, a piano keyboard, a scope and meters to put on a scene, in plain JavaScript. They lay themselves out, work by touch, mouse and keyboard, and can be tied to a synth's settings. A sibling of pictures.js.",
   "type": "module",
-  "main": "./controls.js",
-  "module": "./controls.js",
-  "exports": { ".": "./controls.js", "./controls.js": "./controls.js" },
-  "files": ["controls.js", "README.md", "CHANGELOG.md", "LICENSE"],
+  "main": "./dials.js",
+  "module": "./dials.js",
+  "exports": { ".": "./dials.js", "./dials.js": "./dials.js" },
+  "files": ["dials.js", "README.md", "CHANGELOG.md", "LICENSE"],
   "engines": { "node": ">=20" },
-  "keywords": ["controls", "dial", "knob", "slider", "piano", "keyboard", "oscilloscope", "meter", "canvas", "synth", "games", "education", "creative-coding"],
+  "keywords": ["dials", "dial", "knob", "slider", "piano", "keyboard", "oscilloscope", "meter", "canvas", "synth", "games", "education", "creative-coding"],
   "author": "John Wylie",
   "license": "MIT"
 }

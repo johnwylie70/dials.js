@@ -1,8 +1,8 @@
 /**
- * controls: dials, sliders, buttons, a piano keyboard, a scope and meters to put on a scene.
+ * dials.js: dials, sliders, buttons, a piano keyboard, a scope and meters to put on a scene.
  *
- *   const { dial, slider, keyboard, scope } = await use("controls.js")     (a pictures.js scene)
- *   import { dial, slider, keyboard, scope } from "./controls.js"          (any page with one canvas)
+ *   const { dial, slider, keyboard, scope } = await use("dials.js")     (a pictures.js scene)
+ *   import { dial, slider, keyboard, scope } from "./dials.js"          (any page with one canvas)
  *
  *   const speed = dial("speed", 0, 10)        a number to read: speed.value (or speed * dt)
  *   dial("cutoff", lead, "filter_cutoff")     the dial IS that setting of `lead`: turning it sets it
@@ -909,7 +909,7 @@ class Panel {
 
     // The controls' own canvas, laid over the scene's. It takes no pointer: the scene's canvas hears them all.
     const layer = this.layer = document.createElement('canvas')
-    layer.dataset.controlsLayer = ''
+    layer.dataset.dialsLayer = ''
     layer.style.cssText = 'position:absolute;pointer-events:none;margin:0;padding:0;border:0;inset:auto'
     canvas.after(layer)
     this.g = layer.getContext('2d')
@@ -1178,7 +1178,7 @@ class Panel {
 // --------------------------------------------------------------------------------------------
 // What a scene calls. Each function reads its arguments the way they are most easily written.
 /** A canvas keeps its panel under this name, so two copies of this file on one page share it. */
-const PANEL = Symbol.for('controls.panel')
+const PANEL = Symbol.for('dials.panel')
 
 /** A dial or slider: (label, min, max, start, options), (label, target, "setting", options) or (label, options). */
 function ranged(args) {
@@ -1265,8 +1265,8 @@ function api(panel) {
   }
 }
 
-/** The controls of one canvas: `const { dial, slider } = controls(canvas)`. With no canvas, the page's only one. */
-function controls(canvas, options) {
+/** The controls of one canvas: `const { dial, slider } = dials(canvas)`. With no canvas, the page's only one. */
+function dials(canvas, options) {
   if (canvas && !(typeof canvas.getBoundingClientRect === 'function')) { options = canvas; canvas = null }
   canvas ||= onlyCanvas()
   let panel = canvas[PANEL]
@@ -1283,10 +1283,10 @@ function controls(canvas, options) {
   return panel.api
 }
 function onlyCanvas() {
-  const found = [...document.querySelectorAll('canvas')].filter((c) => c.dataset.controlsLayer === undefined)
+  const found = [...document.querySelectorAll('canvas')].filter((c) => c.dataset.dialsLayer === undefined)
   if (found.length === 1) return found[0]
   throw new Error(found.length
-    ? 'There is more than one canvas on this page, so say which one the controls are for: const { dial, slider } = controls(canvas)'
+    ? 'There is more than one canvas on this page, so say which one the controls are for: const { dial, slider } = dials(canvas)'
     : 'There is no canvas on this page to put controls on')
 }
 
@@ -1298,17 +1298,17 @@ function theme(colours) {
 }
 
 // The same functions with no canvas named: for a page (and a pictures.js scene) with one canvas.
-const dial = (...args) => controls().dial(...args)
-const slider = (...args) => controls().slider(...args)
-const button = (...args) => controls().button(...args)
-const toggle = (...args) => controls().toggle(...args)
-const select = (...args) => controls().select(...args)
-const keyboard = (...args) => controls().keyboard(...args)
-const scope = (...args) => controls().scope(...args)
-const meter = (...args) => controls().meter(...args)
-const label = (...args) => controls().label(...args)
-const row = () => controls().row()
-const layout = (options) => controls().layout(options)
-const over = (x, y) => controls().over(x, y)
+const dial = (...args) => dials().dial(...args)
+const slider = (...args) => dials().slider(...args)
+const button = (...args) => dials().button(...args)
+const toggle = (...args) => dials().toggle(...args)
+const select = (...args) => dials().select(...args)
+const keyboard = (...args) => dials().keyboard(...args)
+const scope = (...args) => dials().scope(...args)
+const meter = (...args) => dials().meter(...args)
+const label = (...args) => dials().label(...args)
+const row = () => dials().row()
+const layout = (options) => dials().layout(options)
+const over = (x, y) => dials().over(x, y)
 
-export { controls, dial, slider, button, toggle, select, keyboard, scope, meter, label, row, layout, over, theme, version }
+export { dials, dial, slider, button, toggle, select, keyboard, scope, meter, label, row, layout, over, theme, version }

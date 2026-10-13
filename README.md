@@ -1,17 +1,17 @@
-# controls.js
+# dials.js
 
 [![MIT licence](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
 
-controls.js puts dials, sliders, buttons, a piano keyboard, a scope and level meters on a scene, in plain JavaScript. You say what you want and it appears: nothing to position, nothing to draw, nothing to wire up. It works with a finger (several at once on the keyboard), with the mouse and with the computer's keys. It is a sibling of [pictures.js](https://github.com/johnwylie70/pictures.js), designed for projects made in [Circuitry Studio](https://www.circuitry.dev), and runs anywhere a browser does.
+dials.js puts dials, sliders, buttons, a piano keyboard, a scope and level meters on a scene, in plain JavaScript. You say what you want and it appears: nothing to position, nothing to draw, nothing to wire up. It works with a finger (several at once on the keyboard), with the mouse and with the computer's keys. It is a sibling of [pictures.js](https://github.com/johnwylie70/pictures.js), designed for projects made in [Circuitry Studio](https://www.circuitry.dev), and runs anywhere a browser does.
 
-Prefer Python? The same library for [Pyctures](https://github.com/johnwylie70/pyctures) is in the `controls-py` repository.
+Prefer Python? The same library for [Pyctures](https://github.com/johnwylie70/pyctures) is in the `pydials` repository.
 
 Nothing here is published yet, and its name is not settled.
 
 ## A synth you can play
 
 ```js
-const { dial, slider, select, scope, keyboard } = await use("controls.js")
+const { dial, slider, select, scope, keyboard } = await use("dials.js")
 
 const lead = makeSynth({ wave: "saw" })
 
@@ -32,7 +32,7 @@ Each dial is that setting of the synth: it takes its range, its unit and where i
 A control needs no synth. It is a number for a game or an animation:
 
 ```js
-const { dial } = await use("controls.js")
+const { dial } = await use("dials.js")
 
 const points = dial("points", 3, 12, 5, { step: 1 })    // from 3 to 12, starting at 5
 
@@ -46,15 +46,15 @@ function draw() {
 
 ## Run it
 
-Put `controls.js` beside your scene and run the scene with pictures.js:
+Put `dials.js` beside your scene and run the scene with pictures.js:
 
 ```
 pictures run synth_panel.js
 ```
 
-The examples in `examples/` run this way (their `controls.js` is a link to the one above them).
+The examples in `examples/` run this way (their `dials.js` is a link to the one above them).
 
-On a page of your own with one canvas, import it: `import { dial, keyboard } from "./controls.js"`. With more than one canvas, say which: `const { dial, keyboard } = controls(canvas)`.
+On a page of your own with one canvas, import it: `import { dial, keyboard } from "./dials.js"`. With more than one canvas, say which: `const { dial, keyboard } = dials(canvas)`.
 
 ## The controls
 
@@ -106,12 +106,12 @@ A target that is changed some other way (by the scene's code, by a song) moves i
 
 The controls are drawn on a canvas of their own, laid exactly over the scene's. So they sit on whatever the scene draws, 2D or 3D, need no call in `draw()`, and cost the scene nothing: only a control that changed is drawn again. A scene that draws nothing at all (a synth panel) is given a dark backdrop. Pointers and keys are heard on the scene's own canvas, so the scene's `mouse`, `touches` and `keys` go on working.
 
-A host that keeps the scene's code somewhere else (the Python library does) makes controls by number and is told what changed once a frame: `make`, `set`, `call`, `drop`, `listen`, `beat` and `ack` on what `controls(canvas)` gives.
+A host that keeps the scene's code somewhere else (the Python library does) makes controls by number and is told what changed once a frame: `make`, `set`, `call`, `drop`, `listen`, `beat` and `ack` on what `dials(canvas)` gives.
 
 ## Tests
 
 ```
-PLAYWRIGHT=/path/to/node_modules/playwright node scripts/test-controls.mjs
+PLAYWRIGHT=/path/to/node_modules/playwright node scripts/test-dials.mjs
 ```
 
 Real browsers (Chromium, and WebKit when Playwright has it) on pictures.js scenes: the controls are turned, pressed and played with a real mouse, the keyboard and several fingers, and every example is run. pictures.js is taken from the folder beside this one.
