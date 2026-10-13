@@ -89,6 +89,16 @@ window.result = [was, wrote, d.value]`,
     source: `const d = dial("f", { min: 20, max: 20000, unit: "Hz" }), e = dial("x", { min: 1, max: 100, log: true }), f = dial("y", 0, 100)
 window.result = [d.log, Math.round(d.fromPos(0.5)), Math.round(e.fromPos(0.5)), f.log, f.fromPos(0.5)]`,
     want: [true, 632, 10, false, 50] },
+  { what: 'a target may spell its units in any case and say how many decimals; a dial turned by ratio shows small values to three figures',
+    source: `const synth = { values: { cutoff: 440, attack: 0.01, pan: 0.5 },
+  describe: (name) => ({ cutoff: { min: 20, max: 20000, unit: "hz" }, attack: { min: 0.001, max: 20, unit: "seconds", log: true }, pan: { min: -1, max: 1, digits: 1 } })[name],
+  get(name) { return this.values[name] }, set(name, value) { this.values[name] = value } }
+const c = dial(synth, "cutoff"), a = dial(synth, "attack"), p = dial(synth, "pan")
+const text = (d) => { let said = ""; d.draw({ fillText: (t) => { said = t }, beginPath() {}, arc() {}, stroke() {}, fill() {}, moveTo() {}, lineTo() {} }, 1); return said }
+const first = [c.unit, c.log, text(c), a.unit, text(a), text(p)]
+a.value = 2.5; c.value = 5000
+window.result = [...first, text(a), text(c)]`,
+    want: ['Hz', true, '440 Hz', 's', '0.010 s', '0.5', '2.50 s', '5.00 kHz'] },
   { what: 'controls line up in rows inside the picture without overlapping, and the keyboard is along the bottom',
     source: `const made = [dial("a", 0, 1), dial("b", 0, 1), slider("c", 0, 1), slider("d", 0, 1, { vertical: true }), button("go"), toggle("t"), select("s", ["one", "two"]), meter(), scope(), dial("e", 0, 1)]
 const piano = keyboard()

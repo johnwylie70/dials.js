@@ -110,6 +110,10 @@ function words(g, text, x, y, size, colour, align = 'center', weight = '', fit) 
   else g.fillText(text, x, y)
 }
 
+/** A unit as it is written, however a target spells it: "hz" is Hz, "seconds" is s. */
+const UNITS = { hz: 'Hz', khz: 'kHz', s: 's', sec: 's', secs: 's', second: 's', seconds: 's', ms: 'ms', db: 'dB', percent: '%', semitones: 'st', cents: 'ct' }
+const unitOf = (unit) => UNITS[String(unit).toLowerCase()] ?? String(unit)
+
 /** A number as a person reads it: 0.25, 440 Hz, 1.2 kHz, 50%. */
 function shown(value, c) {
   if (c.format) return String(c.format(value))
@@ -117,7 +121,10 @@ function shown(value, c) {
   let unit = c.unit || ''
   if (unit === 'Hz' && Math.abs(value) >= 1000) return `${(value / 1000).toFixed(Math.abs(value) >= 10000 ? 1 : 2)} kHz`
   const span = Math.abs(c.max - c.min)
-  const places = c.digits ?? (c.step ? decimals(c.step) : span >= 100 ? (Math.abs(value) < 10 ? 1 : 0) : span >= 10 ? 1 : 2)
+  // A dial turned by ratio covers small values and large ones: each is shown to about three figures.
+  const size = Math.abs(value)
+  const places = c.digits ?? (c.step ? decimals(c.step) : c.log ? (size >= 100 ? 0 : size >= 10 ? 1 : size >= 1 ? 2 : 3)
+    : span >= 100 ? (size < 10 ? 1 : 0) : span >= 10 ? 1 : 2)
   if (unit && unit !== '%') unit = ' ' + unit
   return value.toFixed(places) + unit
 }
@@ -179,8 +186,8 @@ class Ranged extends Control {
     this.min = spec.min ?? d.min ?? 0
     this.max = spec.max ?? d.max ?? 1
     this.step = spec.step ?? d.step ?? (d.kind === 'int' ? 1 : 0)
-    this.unit = spec.unit ?? d.unit ?? ''
-    this.digits = spec.digits
+    this.unit = unitOf(spec.unit ?? d.unit ?? '')
+    this.digits = spec.digits ?? d.digits
     this.format = spec.format || null
     // A pitch is turned by ratio, not by amount: half the dial is 20 to 200 Hz, not 20 to 10,000.
     this.log = this.min > 0 && this.max > this.min &&
