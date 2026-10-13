@@ -190,12 +190,17 @@ await drawn()
 const under = (c) => { let said = ""; const g = dials().panel.g, was = g.fillText; g.fillText = function (t, ...rest) { said = t; return was.call(this, t, ...rest) }; c.draw(g, c.u); g.fillText = was; return said }
 window.result = [small.names.length, usual.names.length, usual.names.every((n) => !n.whole), large.names.every((n) => n.w > usual.names[n.i].w), large.w > usual.w && usual.w > small.w, many.names.length, three.names.every((n) => n.whole), under(small), under(many), [small, usual, large, many, three].every((c) => c.x >= 0 && c.x + c.w <= width)]`,
     want: [0, 4, true, true, true, 0, true, 'cathedral hall', '1', true] },
-  { what: 'a rotary with its names round it does not name its choice a second time underneath; a small one, with none round it, does',
+  { what: 'a rotary with its names round it does not name its choice a second time underneath (a small one, with none round it, does), showValue says otherwise either way, and its title and its knob are on a line with the dials beside it',
     source: `const three = rotary("e", ["sine", "saw", "noise"], "saw"), small = rotary("a", ["sine", "saw", "noise"], "saw", { size: "small" }), beside = dial("d", 0, 1)
+const both = rotary("b", ["sine", "saw", "noise"], "saw", { showValue: true }), none = rotary("n", ["sine", "saw", "noise"], "saw", { size: "small", showValue: false })
 await drawn()
 const count = (c) => { const said = []; const g = dials().panel.g, was = g.fillText; g.fillText = function (t, ...rest) { said.push(t); return was.call(this, t, ...rest) }; c.draw(g, c.u); g.fillText = was; return said.filter((t) => t === "saw").length }
-window.result = [count(three), count(small), three.names.find((n) => n.i === 1).whole, beside.y === three.y && beside.h === three.h]`,
-    want: [1, 1, true, true] },
+const middle = beside.y + 20 * beside.u + (beside.h - 40 * beside.u) / 2
+const alone = rotary("x", ["sine", "saw", "noise"], { x: 500, y: 300 }), read = rotary("y", ["sine", "saw", "noise"], { x: 600, y: 300, showValue: true })
+await drawn()
+window.result = [count(three), count(small), count(both), count(none), three.names.find((n) => n.i === 1).whole, beside.y === three.y && beside.h === three.h, Math.abs(three.centre(three.u)[1] - middle) < 0.01,
+  three.names.find((n) => n.i === 1).y - 5 * three.u >= three.y + 18 * three.u, alone.h < read.h, alone.h]`,
+    want: [1, 1, 2, 0, true, true, true, true, true, 114] },
   { what: 'a target that says a setting has changed is asked about it again: a select keeps its choice while it is still there, a dial takes the new range, and a control that is gone is no longer told',
     source: `const heard = new Set()
 const input = { names: ["all", "1", "2"], on: "2", low: 0, high: 10, at: 4,
