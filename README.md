@@ -464,7 +464,47 @@ function update(dt) {
 | `pitchWheel(label, target, "setting")` | A wheel that is rolled, and rolls back to where it started when you let go. Alone, `bend = pitchWheel("bend")` runs from -1 to 1. |
 | `modWheel(…)`, `wheel(…)` | The same wheel, which stays where it is put (`{ spring: true }` makes it roll back). Both are sliders in every other way. |
 
-`examples/drum_machine.js` is a drum machine made of these: a grid, pads, a tempo and the shape of each hit.
+**Patterns: a gate, an arpeggio and a drum sequencer.**
+
+![A gate's pattern as sixteen bars of different heights with its rate, depth and smoothing beside it, and an arpeggio's pattern as a grid of notes with a tied note, an accent and a slide, with its pattern, rate, octaves and style beside it](docs/images/gate-arp-patterns.png)
+
+```js
+gatePattern("gate", pad)                                  // pad's gate pattern, with its rate and depth beside it
+arpPattern("arp", lead)                                   // lead's arpeggio
+const mine = gatePattern("chop", "x.x.x5x.X.3.xx..")      // or one of your own: mine.value, mine.text
+```
+
+| | |
+|---|---|
+| `gatePattern(label, target)` | The steps that open and shut a sound in time, each a bar as tall as the gate is open. Tap a bar on and off, drag up and down on it for its level, drag across to draw a line of them. The − and + at its corner set how many steps (up to 32, or what the target says). |
+| `arpPattern(label, target)` | An arpeggio's pattern: steps across, and the notes of the chord up the side (1 is its root; the rows above are the same notes an octave up). Tap a cell and that step plays that note; tap it again for a rest; drag sideways from it and the note is held across the next steps. The lane under the grid gives a step an accent, and a second one a slide where the target has slides. `arp.preset("up-down")` writes a pattern by name (`"up"`, `"down"`, `"up-down"`). Options: `notes` (how many notes of the chord, 4), `octaves` (2), `steps`, `slide`. |
+| `steps(label, 16)` | The lane of steps that the two above, and a row of a grid, are made of, to use for anything: a row of accents, a setting that changes each step. Tap and drag across; `{ levels: true }` makes each a bar, `{ accents: true }` gives an accent to a step you drag up on. `steps(label, target, "setting")` ties it to a setting. |
+| `drumSeq(label, drums, target)` | A drum sequencer that plays by itself: see below. |
+
+Each has `value` (a list: levels from 0 to 1 for a gate or a lane, and for an arpeggio a step each, `{ note, octave, tie, accent, slide }` with note 0 for a rest), `text` (the same as text), `length`, and `step`: set `gate.step = 3` and that step is lit as the one sounding. Any of `value` and `text` may be set, and `onChange(value)` hears a hand.
+
+**As text**, a pattern can be saved, pasted into your code and handed to a target that keeps it that way:
+
+| | |
+|---|---|
+| a gate, a lane, a drum's row | one mark a step: `.` off, `x` on, `X` on with an accent, `1` to `9` on at that many tenths. Spaces and `\|` are for the eye: `"x...x... \| x.5.X..."`. |
+| an arpeggio | words with spaces between: `1` `2` `3` that note of the chord, `-` a rest, `_` the note before held on; after a note `^` an octave up (`v` down), `!` an accent, `~` a slide: `"1 - 3 2 _ 1! 3~ 5^"`. |
+
+**Tied to a target**, a pattern is ONE setting of it, found by name when you give none (`gate_pattern`, `arp_pattern`, or `pattern`). It is read and written as the target keeps it: as text if the setting is text, else as a list. `describe(name)` may say `max` (the most steps) and, for an arpeggio, `notes`, `octaves` and `slide`. A target that has `step()` or `position()` lights the step that is sounding. The settings that go with it are put beside it on the same plate when the target has them (a rate, depth, smoothing and swing for a gate; a rate, order, octaves, length and style for an arpeggio): a `select` for one that is a choice and a small dial for a number. `{ beside: false }` leaves them out. The marks of the text and the names looked for are each one small table in `dials.js` (`STEP_MARKS`, `ARP_MARKS`, `BESIDE`), so they are changed in one place.
+
+![A drum sequencer: play, a tempo of 124 with a minus and a plus, swing, four rows of sixteen steps for kick, snare, hat and clap with the seventh column lit and the clap's row muted, a breakbeat chosen, and clear](docs/images/drum-seq.png)
+
+```js
+const beat = drumSeq("beat", ["kick", "snare", "hat", "clap"], drums, { pattern: "backbeat", tempo: 110 })
+```
+
+`drumSeq` is a whole drum machine in one control. Tap a step on and off, drag across to paint, and drag up on a step for an accent. Tap a drum's name to hear it and the dot beside it to mute its row. Its own strip has play and stop, the tempo (− and +, or tap the number in time), swing, starter patterns (four on the floor, a backbeat, a breakbeat) and clear. On a phone it shows as many steps as fit a finger, a page at a time, and turns the page as it plays.
+
+It plays whatever it is given: `target` (or `targets`, a list or `{ kick: …, snare: … }`) is anything with `noteOn(note, velocity)`, and each row plays its drum's note (a kick is 36, a snare 38, a hat 42, a clap 39; `notes` says otherwise). `onStep(drum, step, velocity)` hears every step that sounds, so with no target at all your own code makes the sound. From code: `beat.play()`, `beat.stop()`, `beat.tempo`, `beat.swing`, `beat.pattern = "breakbeat"`, `beat.mute("hat")`, `beat.get("kick", 0)`, `beat.put("kick", 0, true)`, `beat.value` (the rows) and `beat.text` (a line of marks for each drum).
+
+**Keeping time.** A target (or `{ clock }`) that offers `time()`, in seconds, is handed each step a little before it is due, as `noteOn(note, velocity, { at })` and `noteOff(note, { at })`, to play at exactly that time: the beat stays tight however busy the page is. With no such clock a step is played on the frame it falls due, and the beat will wobble when the page is busy.
+
+`examples/drum_machine.js` is made of it, and `examples/trance.js` is a gated chord and an arpeggio drawn with the two pattern editors.
 
 ## Targets
 

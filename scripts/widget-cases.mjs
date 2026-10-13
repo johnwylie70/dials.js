@@ -5,10 +5,10 @@
  */
 
 /** The names a scene is given besides the first part's. */
-export const MORE = 'const { number, stepper, textBox, readout, checkbox, choose, radio, dropdown, xyPad, colourPicker, colorPicker, progress, light, busy, rangeSlider, fader, joystick, dpad, actionButton, envelope, stepGrid, pads, wheel, modWheel, pitchWheel } = lib\n'
+export const MORE = 'const { number, stepper, textBox, readout, checkbox, choose, radio, dropdown, xyPad, colourPicker, colorPicker, progress, light, busy, rangeSlider, fader, joystick, dpad, actionButton, envelope, stepGrid, pads, wheel, modWheel, pitchWheel, steps, gatePattern, arpPattern, drumSeq } = lib\n'
 
 /** The kinds of this part: at every size each is asked to draw, and must keep to its own box. */
-export const MORE_KINDS = ['number', 'textBox', 'readout', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'progress', 'light', 'busy', 'rangeSlider', 'fader', 'joystick', 'dpad', 'actionButton', 'envelope', 'stepGrid', 'pads', 'wheel']
+export const MORE_KINDS = ['number', 'textBox', 'readout', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'progress', 'light', 'busy', 'rangeSlider', 'fader', 'joystick', 'dpad', 'actionButton', 'envelope', 'stepGrid', 'pads', 'wheel', 'steps', 'gatePattern', 'arpPattern', 'drumSeq']
 /** Those a finger works: on a touch screen none is smaller than a finger. */
 export const MORE_TOUCHED = ['number', 'textBox', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'rangeSlider', 'fader', 'joystick', 'dpad', 'actionButton', 'envelope', 'pads', 'wheel']
 
@@ -139,6 +139,45 @@ const first = [g.value, g.get("kick", 0), g.get("snare", 4), g.row("snare"), g.s
 g.clear(); p.hit("snare", 0.5); p.lift("snare"); p.flash("hat")
 window.result = [...first, g.row(0), p.notes, q.names.length, q.columns, log, [w.min, w.max, w.value, w.spring, w.vertical], [m.value, m.spring]]`,
     want: [[[1, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0.5, 0, 0, 0]], 1, 0.5, [0, 0, 0, 0, 0.5, 0, 0, 0], 1, [[1, 0, 0, 1], [0, 0.5, 0, 0]], ['1', '2'], [0, 0, 0, 0, 0, 0, 0, 0], [36, 38, 42, 39], 6, 3, ['on 38 0.5', 'off 38'], [-1, 1, 0, true, true], [64, false]] },
+  { what: 'a pattern is a list and is text, and either may be set: a lane of steps, a gate with levels, an arpeggio with rests, ties, octaves, accents and slides, and a drum sequencer with a line for each drum',
+    source: `const lane = steps("accent", 8), gate = gatePattern("gate", "x.5.X..3"), arp = arpPattern("arp", "1 - 3 2 _ 1! 3~ 5^"), seq = drumSeq(["kick", "snare"], { steps: 8 })
+lane.text = "x..x|x.X."; seq.text = "kick: x...x...\\nsnare: ..X...x."
+const first = [lane.value, lane.steps[6], lane.length, gate.value, gate.text, gate.length, arp.text, arp.value[4], arp.value[7], arp.value[1].note, seq.value, seq.text, seq.steps[1][2].accent]
+lane.value = [1, 0, 0.5, true]; gate.put(1, 0.25); arp.value = [1, 2, { note: 3, octave: 1, accent: true }, 0]; arp.length = 6; seq.put("snare", 0, true); seq.pattern = "backbeat"
+window.result = [...first, lane.text, lane.length, gate.text, arp.text, seq.get("kick", 0), seq.text.split("\\n")[1]]`,
+    want: [[1, 0, 0, 1, 1, 0, 1, 0], { on: true, level: 1, accent: true }, 8, [1, 0, 0.5, 0, 1, 0, 0, 0.3], 'x.5.X..3', 8, '1 - 3 2 _ 1! 3~ 5^', { note: 0, octave: 0, tie: true, accent: false, slide: false }, { note: 5, octave: 1, tie: false, accent: false, slide: false }, 0,
+      [[1, 0, 0, 0, 1, 0, 0, 0], [0, 0, 1, 0, 0, 0, 1, 0]], 'x...x...\n..X...x.', true, 'x.5x', 4, 'x35.X..3', '1 2 3^! - - -', 1, '....X...'] },
+  { what: 'a pattern tied to a target is found by name, read and written as the target keeps it (text, or a list), follows the target, lights the step the target says is sounding, and has the target\'s settings made beside it',
+    source: `const P = { gate_pattern: { kind: "pattern", max: 24 }, gate_rate: { kind: "choice", choices: "1/8|1/16|1/32" }, gate_depth: { min: 0, max: 1 }, arp_pattern: { kind: "pattern", notes: 3 }, arp_rate: { kind: "choice", choices: "1/8|1/16" } }
+const lead = { v: { gate_pattern: "x.x.", gate_rate: 1, gate_depth: 0.5, arp_pattern: "1 3 2", arp_rate: 0, levels: [1, 0, 0.5] }, at: 2, describe: (n) => P[n], get(n) { return this.v[n] }, set(n, x) { this.v[n] = x }, step() { return this.at } }
+const gate = gatePattern("gate", lead), arp = arpPattern(lead), list = steps("levels", lead, "levels")
+await drawn()
+const beside = dials().all.map((c) => c.kind + " " + c.label)
+const first = [gate.text, gate.lane.most, gate.step, arp.text, arp.notes, arp.step, list.value, beside]
+gate.put(1, true); arp.preset("down"); list.put(1, 1)
+const wrote = [lead.v.gate_pattern, lead.v.arp_pattern, lead.v.levels]
+lead.v.gate_pattern = "X..x..x."; lead.at = 5
+await drawn()
+window.result = [...first, wrote, gate.text, gate.length, gate.step]`,
+    want: ['x.x.', 24, 2, '1 3 2', 3, 2, [1, 0, 0.5], ['gatePattern ', 'select rate', 'dial depth', 'arpPattern ', 'select pattern', 'select rate', 'steps levels'], ['xxx.', '3 2 1', [1, 1, 0.5]], 'X..x..x.', 8, 5] },
+  { what: 'a drum sequencer plays by itself: each step that is on is handed to its row\'s target a little before it is due, with the time it is to sound, in order, swung and not when muted; and the column that is lit follows the clock',
+    source: `const log = [], heard = []
+const clock = { t: 10, time() { return this.t } }
+const kit = { noteOn: (note, velocity, when) => log.push([note, velocity, Math.round(when.at * 1000)]), noteOff() {} }
+const seq = drumSeq("beat", ["kick", "hat"], kit, { steps: 4, tempo: 150, clock, value: ["X.x.", "xxxx"], swing: 0.5, onStep: (row, step, velocity) => heard.push(row + step) })
+seq.mute("hat")
+seq.play()
+await drawn()
+const early = [log.length, seq.step]
+clock.t = 10.21
+await drawn()
+const one = [log.map((l) => l.join()), seq.step]
+seq.mute("hat", false); clock.t = 10.46
+await drawn()
+seq.stop()
+window.result = [early, one, log.slice(1).map((l) => l[0] + "@" + l[2]), heard, seq.step, seq.playing]`,
+    // At 150 beats a minute a step is a tenth of a second, and every other one is half a step late: the first is due at 10.05.
+    want: [[1, -1], [['36,1,10050', '36,0.7,10250'], 1], ['36@10250', '42@10400', '36@10450', '42@10450', '42@10600'], ['kick0', 'kick2', 'hat3', 'kick0', 'hat0', 'hat1'], -1, false] },
 ]
 
 /** What is being typed into, and where it is on the page. */
@@ -471,6 +510,62 @@ window.t = { g: stepGrid("drums", 8, ["kick", "snare"], { onChange: (row, step, 
       return [rolled, back, await read(page, 'Math.round(t.m.value)')]
     },
     want: [0.5, 0, 40] },
+  { what: 'a gate\'s steps are tapped on and off, set by how high the finger is and drawn across; its length is changed with the − and +; an arpeggio\'s cell is tapped for a note and again for a rest, dragged sideways to hold it on, and given an accent in the lane under the grid',
+    setup: `const heard = []
+window.t = { g: gatePattern("gate", 8, { onChange: () => heard.push(t.g.text) }), a: arpPattern("arp", "1 2 3 4"), heard,
+  bar: (i, down) => { const c = t.g.spotOf(i, t.g.u), b = canvas.getBoundingClientRect(); return [b.left + c.x + c.w / 2, b.top + c.y + c.h * down] },
+  cell: (i, row) => { const s = t.a.grid(t.a.u), b = canvas.getBoundingClientRect(); return [b.left + s.x + (i + 0.5) * s.w, b.top + (row < 0 ? s.under + 11 * t.a.u : s.y + (t.a.rows - 1 - row + 0.5) * s.h)] },
+  count: (c, side) => { const b = canvas.getBoundingClientRect(); return [b.left + c.x + c.w - (side < 0 ? 73 : 19) * c.u, b.top + c.y + 13 * c.u] } }`,
+    async act(page, { read, finger }) {
+      const bar = (i, down) => read(page, `t.bar(${i}, ${down})`), cell = (i, row) => read(page, `t.cell(${i}, ${row})`)
+      await page.mouse.click(...await bar(0, 0.5)); await page.waitForTimeout(400)
+      await page.mouse.click(...await bar(2, 0.5)); await page.waitForTimeout(400)
+      await page.mouse.click(...await bar(2, 0.5)); await page.waitForTimeout(400)
+      const tapped = await read(page, 't.g.text')
+      await finger(page, 'pointerdown', 11, await bar(4, 0.1)); await finger(page, 'pointermove', 11, await bar(4, 0.5)); await finger(page, 'pointermove', 11, await bar(5, 0.7)); await finger(page, 'pointermove', 11, await bar(6, 0.2)); await finger(page, 'pointerup', 11, await bar(6, 0.2))
+      const drawn = await read(page, '[t.g.text, t.heard.at(-1)]')
+      await page.mouse.click(...await read(page, 't.count(t.g, 1)')); await page.waitForTimeout(400)
+      await page.mouse.click(...await read(page, 't.count(t.g, 1)')); await page.waitForTimeout(400)
+      await page.mouse.click(...await read(page, 't.count(t.g, -1)'))
+      const longer = await read(page, '[t.g.length, t.g.text]')
+      await page.mouse.click(...await cell(1, 0)); await page.waitForTimeout(400)
+      await page.mouse.click(...await cell(3, 3)); await page.waitForTimeout(400)
+      const noted = await read(page, 't.a.text')
+      const from = await cell(0, 4)
+      await page.mouse.move(...from); await page.mouse.down(); await page.mouse.move(...await cell(2, 4), { steps: 3 }); await page.mouse.move(...await cell(1, 4), { steps: 2 }); await page.mouse.up()
+      const tied = await read(page, 't.a.text')
+      await page.mouse.click(...await cell(2, -1))
+      return [tapped, drawn, longer, noted, tied, await read(page, 't.a.text')]
+    },
+    want: ['x.......', ['x...538.', 'x...538.'], [9, 'x...538..'], '1 1 3 -', '1^ _ 3 -', '1^ _ 3! -'] },
+  { what: 'a drum sequencer\'s steps are tapped and painted, leaned up on for an accent, its rows muted and heard by their names, and its own strip plays and stops it, sets its tempo, picks a pattern and clears it',
+    setup: `const log = []
+const kit = { noteOn: (note) => log.push(note), noteOff() {} }
+window.t = { s: drumSeq("beat", ["kick", "snare", "hat"], kit, { tempo: 100 }), log,
+  cell: (r, s) => { const c = t.s.spotOf(r, s, t.s.u), b = canvas.getBoundingClientRect(); return [b.left + c.x + c.w / 2, b.top + c.y + c.h / 2] },
+  part: (name) => { const p = t.s.parts(t.s.u)[name], b = canvas.getBoundingClientRect(); return [b.left + p.x + p.w / 2, b.top + p.y + p.h / 2] },
+  name: (r, fx) => { const b = canvas.getBoundingClientRect(), u = t.s.u; return [b.left + t.s.x + fx * u, b.top + t.s.y + (34 + r * 30 + 15) * u] } }`,
+    async act(page, { read, finger }) {
+      const cell = (r, s) => read(page, `t.cell(${r}, ${s})`), part = (name) => read(page, `t.part("${name}")`)
+      await page.mouse.click(...await cell(0, 0)); await page.waitForTimeout(400)
+      await finger(page, 'pointerdown', 11, await cell(2, 1)); for (const s of [2, 3]) await finger(page, 'pointermove', 11, await cell(2, s)); await finger(page, 'pointerup', 11, await cell(2, 3))
+      const at = await cell(1, 4)
+      await finger(page, 'pointerdown', 11, at); await finger(page, 'pointermove', 11, [at[0], at[1] - 30]); await finger(page, 'pointerup', 11, [at[0], at[1] - 30])
+      const drawn = await read(page, 't.s.text.split("\\n").map((line) => line.slice(0, 6))')
+      await page.mouse.click(...await read(page, 't.name(1, 40)')); await page.waitForTimeout(400)
+      await page.mouse.click(...await read(page, 't.name(2, 16)')); await page.waitForTimeout(400)
+      const named = await read(page, '[t.log, t.s.muted]')
+      await page.mouse.click(...await part('faster')); await page.waitForTimeout(400)
+      await page.mouse.click(...await part('play'))
+      await page.waitForTimeout(700)
+      const playing = await read(page, '[t.s.tempo, t.s.playing, t.s.step >= 0, t.log.includes(36), t.log.includes(42)]')
+      await page.mouse.click(...await part('play')); await page.waitForTimeout(400)
+      await page.mouse.click(...await part('pattern')); await page.waitForTimeout(400)
+      const preset = await read(page, '[t.s.playing, t.s.pattern, t.s.row_ == null && t.s.get("kick", 4)]')
+      await page.mouse.click(...await part('clear'))
+      return [drawn, named, playing, preset, await read(page, 't.s.text.includes("x")')]
+    },
+    want: [['x.....', '....X.', '.xxx..'], [[38], [false, false, true]], [101, true, true, true, false], [false, 'four on the floor', 1], false] },
 ]
 
 /** Scenes laid out at every size of screen: each must be whole, apart, in the picture and big enough for a finger. */
@@ -503,6 +598,12 @@ envelope("shape"); pitchWheel("bend"); modWheel("mod")
 row()
 label("beat")
 stepGrid("drums", 16, ["kick", "snare", "hat"]); pads("kit", ["kick", "snare", "hat", "clap"])`,
+  patterns: `gatePattern("gate", "x.x.x5x.X.3.xx..")
+row()
+arpPattern("arp", "1 - 3 2 _ 1! 3 2^")
+row()
+steps("accent", 16); row()
+drumSeq("beat", ["kick", "snare", "hat", "clap"], { pattern: "backbeat" })`,
 }
 
 /** In the page: every control of these kinds is drawn alone on a clear canvas, and what it painted is measured against its box. */
