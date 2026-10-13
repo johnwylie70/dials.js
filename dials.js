@@ -2545,6 +2545,15 @@ class Panel {
   pointerDown(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return
     const p = this.point(e)
+    // A touch anywhere ends what was being typed; and while something is open over the controls, every touch is its.
+    if (this.typing) this.typing.close(true)
+    if (this.popup) {
+      e.preventDefault()
+      try { this.canvas.setPointerCapture(e.pointerId) } catch (e2) { /* a pointer that has already gone */ }
+      this.grabs.set(e.pointerId, this.popup)
+      this.popup.held = true
+      return this.popup.down(p)
+    }
     const tab = this.tabAt(p.x, p.y)
     if (tab) { e.preventDefault(); this.show(tab.page); return }
     let item = this.under(p.x, p.y)
@@ -2558,6 +2567,9 @@ class Panel {
       const bar = this.bar()
       if (item.bar && (p.y < bar.y || p.y > bar.y + bar.h)) this.scrollBy((p.y - bar.y - bar.h / 2) * (v.h + v.max) / v.h)
     }
+    // The control touched last is the one the arrow keys work.
+    this.focus = item && item !== this.scroller ? item : null
+    this.keyed = false
     if (!item) return
     // The whole drag is this control's, wherever the pointer goes: off the control, off the canvas.
     e.preventDefault()
@@ -2614,6 +2626,479 @@ class Panel {
     item.held = still
     item.up(this.point(e))
     if (item === this.scroller) this.shift = true
+  }
+}
+
+// ============================================================================================
+// MORE CONTROLS. Each kind is a class of its own below, in the order of the README: for any program,
+// for games, for music. They are put among the kinds at the end of this part, and `more` has the
+// function a scene calls for each.
+
+SPELLING.on_enter = 'onEnter'
+
+/**
+ * THE KEYS go to the control that was touched last. `on` says what each key it knows does (it is
+ * handed whether Shift is down); Tab goes on to the next control that takes keys, and Shift and Tab
+ * back. A ring is drawn round the control once a key has been used on it.
+ */
+function keysOf(control, e, on) {
+  const panel = control.panel
+  if (panel.focus !== control || panel.typing || e.ctrlKey || e.metaKey || e.altKey) return false
+  if (e.key === 'Tab') {
+    const takers = panel.items.filter((item) => item.keyDown && item.kind !== 'keyboard' && item.w && !item.hidden)
+    const next = takers[(takers.indexOf(control) + (e.shiftKey ? takers.length - 1 : 1)) % takers.length]
+    if (!next || next === control) return false
+    panel.focus = next
+    panel.keyed = true
+    control.touch(); next.touch()
+    return true
+  }
+  const act = on[e.key === ' ' ? 'Space' : e.key]
+  if (!act) return false
+  panel.keyed = true
+  act(e.shiftKey)
+  control.touch()
+  return true
+}
+function ring(g, control, x, y, w, h, r, u) {
+  if (control.panel.focus !== control || !control.panel.keyed) return
+  rounded(g, x - 2 * u, y - 2 * u, w + 4 * u, h + 4 * u, r + 2 * u)
+  g.strokeStyle = THEME.text
+  g.lineWidth = 1.5 * u
+  g.stroke()
+}
+
+/** A finger that moved less than this, in points, between going down and lifting, tapped. */
+const tapped = (control, p) => Math.hypot(p.x - control.from.x, p.y - control.from.y) < TAP_REACH * control.u && !control.dragged
+
+/**
+ * TYPING. A canvas cannot be typed into, so for as long as someone types, a real box for text is laid
+ * over the control: the device's own keyboard, caret, selection and paste all work, on a phone as on
+ * a computer. It is made as a tap ENDS (a phone brings its keyboard up only for a touch that has just
+ * happened) and taken away when the typing is over: Enter keeps what was typed, Escape puts back what
+ * was there, and a touch anywhere else keeps it. Its letters are never under 16 pixels, or a phone
+ * would zoom the page in on it. It lies beside the controls' canvas in the page, so it stays on its
+ * control when the page is scrolled or drawn at another size, and it asks nothing of the page it is
+ * in (no dialog, no other window), so a scene shut in a frame is typed into as any other is. What is
+ * typed goes no further than the box: the scene's `keys` do not see it.
+ *
+ *   where()                the place for it, in the scene's points: [x, y, w, h]
+ *   text, keys             what is in it to begin with, and the keyboard asked for ("text", "decimal", "numeric")
+ *   live(text)             called as each letter is typed
+ *   done(text, entered)    called once at the end; entered: with the Enter key
+ */
+function typeIn(control, o) {
+  const panel = control.panel
+  if (panel.typing) panel.typing.close(true)
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.value = o.text
+  input.inputMode = o.keys || 'text'
+  input.enterKeyHint = 'done'
+  input.autocomplete = 'off'
+  input.autocapitalize = 'off'
+  input.spellcheck = false
+  if (o.max) input.maxLength = o.max
+  if (o.placeholder) input.placeholder = o.placeholder
+  input.setAttribute('aria-label', control.label)
+  input.dataset.dialsTyping = ''
+  const s = input.style, u = control.u
+  s.cssText = `position:absolute;box-sizing:border-box;margin:0;padding:0 ${Math.round(8 * u)}px;border:1.5px solid ${control.accent};border-radius:${Math.round(6 * u)}px;outline:none;background:${THEME.well};color:${THEME.text};font:600 ${Math.max(16, Math.round(14 * u))}px ${THEME.font};text-align:${o.align || 'left'};-webkit-appearance:none;appearance:none;touch-action:manipulation`
+  const typing = panel.typing = {
+    control, input,
+    /** Put it on its control, which the layout may have moved; a control that has gone, or gone out of sight, is typed into no more. */
+    place() {
+      const [x, y, w, h] = o.where(), v = control.view
+      if (!panel.items.includes(control) || control.hidden || (v && (y < v.y || y + h > v.y + v.h || x < v.x || x + w > v.x + v.w))) return typing.close(true)
+      const css = [panel.canvas.offsetLeft + x, panel.canvas.offsetTop + y, w, h].map((n) => Math.round(n * 2) / 2 + 'px')
+      if (css.join() === typing.at) return
+      typing.at = css.join()
+      ;[s.left, s.top, s.width, s.height] = css
+    },
+    close(keep, entered, left) {
+      if (panel.typing !== typing) return
+      panel.typing = null
+      const text = input.value, here = document.activeElement === input
+      // Left because the page is taking it away (a scene that is stopped as it is typed into): the page is let finish first.
+      if (left) { s.display = 'none'; setTimeout(() => input.remove()) } else input.remove()
+      // The keys go back to the scene.
+      if (here) try { panel.canvas.focus({ preventScroll: true }) } catch (e) { /* a canvas that cannot take them */ }
+      o.done(keep ? text : o.text, !!(keep && entered))
+      control.touch()
+    },
+  }
+  input.addEventListener('input', () => { if (o.live) o.live(input.value) })
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation()
+    if (e.isComposing) return
+    if (e.key === 'Enter') typing.close(true, true)
+    else if (e.key === 'Escape') typing.close(false)
+  })
+  input.addEventListener('keyup', (e) => e.stopPropagation())
+  input.addEventListener('pointerdown', (e) => e.stopPropagation())
+  input.addEventListener('blur', () => typing.close(true, false, true))
+  if (!panel.typed) {
+    panel.typed = true
+    panel.undo.push(() => { if (panel.typing) panel.typing.close(false) })
+  }
+  panel.layer.after(input)
+  typing.place()
+  if (panel.typing !== typing) return null
+  input.focus()
+  if (o.all) input.select()
+  else try { input.setSelectionRange(input.value.length, input.value.length) } catch (e) { /* a box that keeps no caret */ }
+  control.touch()
+  return typing
+}
+/** Is this control being typed into now? */
+const typingIn = (control) => !!control.panel.typing && control.panel.typing.control === control
+
+/** How long a − or + is held before it steps again, how long between steps at first, and the shortest that comes down to, in milliseconds. */
+const STEP_HOLD_MS = 420
+const STEP_AGAIN_MS = 130
+const STEP_FASTEST_MS = 28
+/** How far a finger drags up or down on the number for one step, in points. */
+const STEP_DRAG = 9
+
+/**
+ * THE NUMBER BOX: a number with − and + at its sides. Tap one to step, hold it to keep stepping
+ * (faster and faster), drag up or down on the number itself, or tap the number and type.
+ * With the keys: the arrows step, Shift ten at a time, Home and End go to the ends, Enter types.
+ */
+class NumberBox extends Ranged {
+  reset = null // two taps on + are two steps, not a way back to the start
+  constructor(panel, kind, spec) {
+    super(panel, kind, spec)
+    if (!this.step) {
+      // Told no step, it counts in ones; a range too small for that, in tenths or hundredths.
+      const span = Math.abs(this.max - this.min)
+      this.step = span >= 5 ? 1 : span >= 0.5 ? 0.1 : 0.01
+      this.default = this.clean(this.default)
+      this.v = this.clean(this.v)
+    }
+    this.log = false
+    this.pos = this.toPos(this.v)
+    this.side = 0 // the − (-1) or + (1) that is held
+    this.again = 0 // when it steps next
+  }
+  scaleOf() { return 1 }
+  natural(u, room, g) {
+    g.font = `600 ${14 * u}px ${THEME.font}`
+    const widest = Math.max(g.measureText(shown(this.min, this)).width, g.measureText(shown(this.max, this)).width)
+    return [Math.max(132 * u, widest + 96 * u), 62 * u]
+  }
+  stretch() { return [0.92, 1.15] }
+  /** The box the number and its − and + are in, and the room each of those two takes. */
+  field(u) { return { x: this.x + 6 * u, y: this.y + 25 * u, w: this.w - 12 * u, h: 30 * u, side: 34 * u } }
+  /** A new value made by hand: stepped, dragged or typed. */
+  take(value) {
+    value = this.clean(value)
+    if (value === this.v) return
+    this.v = value
+    this.pos = this.toPos(value)
+    this.changed(value)
+  }
+  nudge(by, big) { this.take(this.v + by * this.step * (big ? 10 : 1)) }
+  down(p) {
+    // A third of it at each side is the − and the +: more than is drawn, for a finger.
+    this.side = p.x < this.x + this.w * 0.3 ? -1 : p.x >= this.x + this.w * 0.7 ? 1 : 0
+    this.from = { x: p.x, y: p.y }
+    this.dragged = false
+    this.pulled = 0
+    this.big = p.shift
+    if (this.side) { this.nudge(this.side, p.shift); this.again = performance.now() + STEP_HOLD_MS; this.wait = STEP_AGAIN_MS }
+    this.touch()
+  }
+  move(p) {
+    if (this.side) return
+    const u = this.u
+    if (!this.dragged && Math.abs(p.y - this.from.y) < TAP_REACH * u) return
+    if (!this.dragged) { this.dragged = true; this.last = this.from.y }
+    this.pulled += this.last - p.y
+    this.last = p.y
+    const steps = Math.trunc(this.pulled / (STEP_DRAG * u))
+    if (steps) { this.pulled -= steps * STEP_DRAG * u; this.nudge(steps, p.shift) }
+  }
+  up(p) {
+    const tap = !this.side && tapped(this, p)
+    this.side = 0
+    this.again = 0
+    if (tap) this.type()
+    this.touch()
+  }
+  /** Type the number. What is typed that is not a number is not taken. */
+  type() {
+    const f = this.field(this.u)
+    typeIn(this, {
+      where: () => { const now = this.field(this.u); return [now.x + now.side, now.y, now.w - 2 * now.side, now.h] },
+      text: String(this.v), keys: Math.min(this.min, this.max) < 0 ? 'text' : decimals(this.step) ? 'decimal' : 'numeric', align: 'center', all: true,
+      done: (text) => { const n = parseFloat(String(text).replace(',', '.')); if (Number.isFinite(n)) this.take(n) },
+    })
+  }
+  keyDown(e) {
+    return keysOf(this, e, {
+      ArrowUp: (big) => this.nudge(1, big), ArrowRight: (big) => this.nudge(1, big), ArrowDown: (big) => this.nudge(-1, big), ArrowLeft: (big) => this.nudge(-1, big),
+      PageUp: () => this.nudge(1, true), PageDown: () => this.nudge(-1, true), Home: () => this.take(this.min), End: () => this.take(this.max), Enter: () => this.type(),
+    })
+  }
+  frame() {
+    super.frame()
+    if (typingIn(this)) this.panel.typing.place()
+    if (!this.side || !this.again || performance.now() < this.again) return
+    this.wait = Math.max(STEP_FASTEST_MS, this.wait * 0.88)
+    this.again = performance.now() + this.wait
+    this.nudge(this.side, this.big)
+  }
+  draw(g, u) {
+    const f = this.field(u), cy = f.y + f.h / 2
+    const low = Math.min(this.min, this.max), high = Math.max(this.min, this.max)
+    words(g, this.label, this.x + this.w / 2, this.y + 13 * u, 12 * u, THEME.dim, 'center', '', this.w - 6 * u)
+    rounded(g, f.x, f.y, f.w, f.h, 8 * u)
+    g.fillStyle = THEME.knob
+    g.fill()
+    rounded(g, f.x + f.side, f.y + 3 * u, f.w - 2 * f.side, f.h - 6 * u, 5 * u)
+    g.fillStyle = THEME.well
+    g.fill()
+    g.lineCap = 'round'
+    g.lineWidth = 2.25 * u
+    for (const by of [-1, 1]) {
+      const cx = by < 0 ? f.x + f.side / 2 : f.x + f.w - f.side / 2, on = this.side === by
+      if (on) { g.fillStyle = this.accent; g.beginPath(); g.arc(cx, cy, 11 * u, 0, TAU); g.fill() }
+      // At the end of its range the − or the + has nothing more to do, and is drawn so.
+      g.strokeStyle = on ? THEME.well : (by < 0 ? this.v > low : this.v < high) ? this.accent : THEME.track
+      g.beginPath()
+      g.moveTo(cx - 5 * u, cy); g.lineTo(cx + 5 * u, cy)
+      if (by > 0) { g.moveTo(cx, cy - 5 * u); g.lineTo(cx, cy + 5 * u) }
+      g.stroke()
+    }
+    if (!typingIn(this)) words(g, shown(this.v, this), this.x + this.w / 2, cy, 14 * u, THEME.text, 'center', '600', f.w - 2 * f.side - 8 * u)
+    ring(g, this, f.x, f.y, f.w, f.h, 8 * u, u)
+  }
+}
+
+/**
+ * THE TEXT BOX: one line of text that is typed. `name.value` is the text; `onChange(text)` is called
+ * as each letter is typed, and `onEnter(text)` when Enter (or the phone keyboard's Done) is pressed.
+ */
+class TextBox extends Control {
+  constructor(panel, kind, spec) {
+    super(panel, kind, spec)
+    let now = spec.value
+    if (spec.target) {
+      this.target = spec.target
+      this.param = spec.param
+      const d = describe(spec.target, spec.param)
+      if (!this.label) this.label = d.label ?? d.name ?? String(spec.param)
+      now ??= readTarget(this.target, this.param) ?? d.default
+    }
+    this.v = now == null ? '' : String(now)
+    this.default = this.v
+    this.placeholder = spec.placeholder ?? ''
+    this.max = spec.max || 0 // the most letters it takes; 0: any number
+    this.onEnter = spec.onEnter || null
+    if (spec.value != null && this.target) writeTarget(this.target, this.param, this.v)
+  }
+  get value() { return this.v }
+  set value(text) {
+    text = String(text ?? '')
+    if (text === this.v) return
+    this.v = text
+    if (this.target) writeTarget(this.target, this.param, text)
+    if (typingIn(this)) this.panel.typing.input.value = text
+    this.touch()
+  }
+  toString() { return this.v }
+  natural(u) { return [(this.wide || 180) * u, 62 * u] }
+  stretch() { return this.wide ? [1, 1] : [0.7, 2] }
+  field(u) { return { x: this.x + 6 * u, y: this.y + 25 * u, w: this.w - 12 * u, h: 30 * u } }
+  take(text) {
+    if (this.max) text = text.slice(0, this.max)
+    if (text === this.v) return
+    this.v = text
+    this.changed(text)
+  }
+  down(p) { this.from = { x: p.x, y: p.y }; this.touch() }
+  up(p) { if (tapped(this, p)) this.type(); this.touch() }
+  type() {
+    typeIn(this, {
+      where: () => { const f = this.field(this.u); return [f.x, f.y, f.w, f.h] },
+      text: this.v, max: this.max, placeholder: this.placeholder,
+      live: (text) => this.take(text),
+      done: (text, entered) => {
+        this.take(text)
+        if (!entered) return
+        if (this.onEnter) this.onEnter(this.v, this)
+        // A host is told of Enter with the text in a list of its own.
+        this.panel.told.push(this.id, [this.v])
+      },
+    })
+  }
+  keyDown(e) { return keysOf(this, e, { Enter: () => this.type() }) }
+  frame() {
+    if (typingIn(this)) return this.panel.typing.place()
+    if (!this.target) return
+    const there = readTarget(this.target, this.param)
+    if (there != null && String(there) !== this.v) { this.v = String(there); this.touch() }
+  }
+  draw(g, u) {
+    const f = this.field(u), cy = f.y + f.h / 2
+    words(g, this.label, f.x + 2 * u, this.y + 13 * u, 12 * u, THEME.dim, 'left', '', this.w - 16 * u)
+    rounded(g, f.x, f.y, f.w, f.h, 6 * u)
+    g.fillStyle = THEME.well
+    g.fill()
+    g.strokeStyle = this.held ? this.accent : THEME.track
+    g.lineWidth = 1.5 * u
+    g.stroke()
+    if (!typingIn(this)) {
+      // Text too long for the box is shown from its end: the part that was typed last.
+      g.save()
+      g.beginPath(); g.rect(f.x + 8 * u, f.y, f.w - 16 * u, f.h); g.clip()
+      g.font = `600 ${14 * u}px ${THEME.font}`
+      const long = g.measureText(this.v).width > f.w - 16 * u
+      if (this.v) words(g, this.v, long ? f.x + f.w - 8 * u : f.x + 8 * u, cy, 14 * u, THEME.text, long ? 'right' : 'left', '600')
+      else if (this.placeholder) words(g, this.placeholder, f.x + 8 * u, cy, 14 * u, THEME.dim, 'left')
+      g.restore()
+    }
+    ring(g, this, f.x, f.y, f.w, f.h, 6 * u, u)
+  }
+}
+
+/** Seconds as a clock shows them: 65 is 1:05, and an hour or more is 1:01:05. */
+function clock(seconds) {
+  const whole = Math.max(0, Math.floor(Number(seconds) || 0)), two = (n) => String(n).padStart(2, '0')
+  const h = Math.floor(whole / 3600), m = Math.floor(whole / 60) % 60, s = whole % 60
+  return h ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`
+}
+/** Words in which every digit takes the same room, so a number that is counting does not shake from side to side. */
+function steady(g, text, cx, cy, size, colour, weight = '600') {
+  g.font = `${weight} ${size}px ${THEME.font}`
+  const cell = g.measureText('0').width, wide = (ch) => (ch >= '0' && ch <= '9' ? cell : g.measureText(ch).width)
+  let all = 0
+  for (const ch of text) all += wide(ch)
+  if (cx == null) return all
+  g.fillStyle = colour
+  g.textAlign = 'center'
+  g.textBaseline = 'middle'
+  let x = cx - all / 2
+  for (const ch of text) { const w = wide(ch); g.fillText(ch, x + w / 2, cy); x += w }
+  return all
+}
+
+/**
+ * THE READOUT shows a value or a message from the scene's code and takes no hand: a score, a clock,
+ * a speed. It is given a function that is asked every frame (`readout("score", () => score)`), a
+ * setting of a target, or nothing, and then `score.value = 12` says what it shows. `size: "large"`
+ * is for a score; `format: "clock"` shows seconds as minutes and seconds.
+ */
+class Readout extends Control {
+  constructor(panel, kind, spec) {
+    super(panel, kind, spec)
+    this.pull = typeof spec.source === 'function' ? spec.source : null
+    if (spec.target) {
+      this.target = spec.target
+      this.param = spec.param
+      const d = describe(spec.target, spec.param)
+      if (!this.label) this.label = d.label ?? d.name ?? String(spec.param)
+      spec = { unit: d.unit, digits: d.digits, ...spec }
+      this.pull = () => readTarget(this.target, this.param)
+    }
+    this.unit = unitOf(spec.unit ?? '')
+    this.digits = spec.digits
+    this.format = spec.format || null
+    this.v = this.pull ? this.pull() : spec.value ?? ''
+    this.text = this.said()
+  }
+  get value() { return this.v }
+  set value(value) { this.v = value }
+  scaleOf() { return 1 }
+  /** How big its letters are, in points before scaling. */
+  get letters() { return sized(this.size, 14, 20, 34) }
+  /** What it shows, as words. */
+  said() {
+    const v = this.v
+    if (this.format === 'clock') return clock(v)
+    if (typeof this.format === 'function') return String(this.format(v))
+    // A number that has once had a part after the point keeps two places, so that it does not jump as it passes a whole number.
+    if (typeof v === 'number') return v.toFixed(this.digits ?? ((this.parts ||= !Number.isInteger(v)) ? 2 : 0))
+    return v == null ? '' : String(v)
+  }
+  /** How wide what it shows is, with its unit. */
+  wideOf(g, u) {
+    const text = steady(g, this.text, null, 0, this.letters * u)
+    if (!this.unit) return text
+    g.font = `${Math.max(11, this.letters * 0.5) * u}px ${THEME.font}`
+    return text + 5 * u + g.measureText(this.unit).width
+  }
+  natural(u, room, g) {
+    g.font = `${12 * u}px ${THEME.font}`
+    const heading = this.label ? g.measureText(this.label).width + 16 * u : 0
+    return [this.wide ? this.wide * u : Math.max(84 * u, heading, this.wideOf(g, u) + 32 * u), ((this.label ? 25 : 8) + this.letters * 1.5 + 7) * u]
+  }
+  stretch() { return this.wide ? [1, 1] : [1, 1.6] }
+  frame() {
+    if (this.pull) this.v = this.pull()
+    const text = this.said()
+    if (text === this.text) return
+    this.text = text
+    // What no longer fits its box is given a wider one; a box is never made narrower, or the others would jump about.
+    if (!this.wide && this.w && this.wideOf(this.panel.g, this.u) + 20 * this.u > this.w) this.panel.arrange = true
+    this.touch()
+  }
+  draw(g, u) {
+    const top = this.y + (this.label ? 25 : 8) * u, h = this.y + this.h - 7 * u - top, cy = top + h / 2
+    if (this.label) words(g, this.label, this.x + this.w / 2, this.y + 13 * u, 12 * u, THEME.dim, 'center', '', this.w - 6 * u)
+    rounded(g, this.x + 6 * u, top, this.w - 12 * u, h, 7 * u)
+    g.fillStyle = THEME.well
+    g.fill()
+    const size = this.letters * u, small = Math.max(11, this.letters * 0.5) * u
+    g.font = `${small}px ${THEME.font}`
+    const unit = this.unit ? g.measureText(this.unit).width + 5 * u : 0
+    // Too long for its box even so (a message), it is drawn narrower rather than cut.
+    const all = steady(g, this.text, null, 0, size) + unit, room = this.w - 24 * u
+    g.save()
+    if (all > room) { g.translate(this.x + this.w / 2, 0); g.scale(room / all, 1); g.translate(-(this.x + this.w / 2), 0) }
+    const wide = steady(g, this.text, this.x + this.w / 2 - unit / 2, cy + 0.5 * u, size, this.colour || THEME.text)
+    if (this.unit) words(g, this.unit, this.x + this.w / 2 - unit / 2 + wide / 2 + 5 * u, cy + (size - small) * 0.32, small, THEME.dim, 'left')
+    g.restore()
+  }
+}
+
+Object.assign(KINDS, { number: NumberBox, textBox: TextBox, readout: Readout })
+for (const kind of ['readout']) SLIDES.add(kind)
+
+/** A text box: (label, text, options) or (label, target, "setting", options). A function anywhere is its onChange. */
+function texted(args) {
+  let [label, a, b, c] = args
+  if (typeof label !== 'string') { [a, b, c] = [label, a, b]; label = undefined }
+  let spec
+  if (isTarget(a) && typeof a !== 'function' && typeof b === 'string') spec = { ...c, target: a, param: b }
+  else if (typeof a === 'string' || typeof a === 'number') spec = { ...(isPlain(b) ? b : null), value: String(a) }
+  else spec = { ...(isPlain(a) ? a : null) }
+  for (const arg of args) if (typeof arg === 'function') spec.onChange = arg
+  spec.label = label
+  return spec
+}
+/** A readout: (label, () => value, options), (label, value, options), (label, target, "setting", options) or (label, options). */
+function shownFrom(args) {
+  let [label, a, b, c] = args
+  if (typeof label !== 'string') { [a, b, c] = [label, a, b]; label = undefined }
+  if (typeof a === 'function') return { ...b, label, source: a }
+  if (isTarget(a) && typeof b === 'string') return { ...c, label, target: a, param: b }
+  if (isPlain(a)) return { ...a, label }
+  return { ...b, label, value: a }
+}
+
+/** The functions a scene calls for the controls of this part. */
+function more(panel) {
+  const make = (kind, read) => (...args) => panel.add(kind, read(args))
+  return {
+    /** A number with − and + at its sides, which can be typed: number("lives", 0, 9, 3) or number("voices", lead, "voices"). */
+    number: make('number', ranged),
+    stepper: make('number', ranged),
+    /** A line of text that is typed: textBox("name", "Ada"), then name.value. Options: placeholder, max (letters), onChange, onEnter. */
+    textBox: make('textBox', texted),
+    /** A value or a message shown: readout("score", () => score), or score = readout("score") and score.value = 12. */
+    readout: make('readout', shownFrom),
   }
 }
 
@@ -2742,6 +3227,7 @@ function api(panel) {
     /** Is a control at this point? A game asks before it treats a click as its own. */
     over: (x, y) => { if (typeof x === 'object') ({ x, y } = x); return panel.covers(x, y) },
     theme: (colours) => theme(colours),
+    ...more(panel),
     /** Take every control away. */
     clear: () => panel.clear(),
     get all() { return panel.items.filter((item) => !item.items) },
@@ -2817,5 +3303,10 @@ const wrap = () => dials().wrap()
 const layout = (options) => dials().layout(options)
 const room = () => dials().room()
 const over = (x, y) => dials().over(x, y)
+const number = (...args) => dials().number(...args)
+const stepper = (...args) => dials().stepper(...args)
+const textBox = (...args) => dials().textBox(...args)
+const readout = (...args) => dials().readout(...args)
 
-export { dials, dial, slider, button, toggle, select, rotary, keyboard, scope, meter, label, group, row, column, grid, page, spacer, wrap, layout, room, over, theme, version }
+export { dials, dial, slider, button, toggle, select, rotary, keyboard, scope, meter, label, group, row, column, grid, page, spacer, wrap, layout, room, over, theme, version,
+  number, stepper, textBox, readout }

@@ -17,6 +17,7 @@ import { createServer } from 'node:http'
 import { mkdir, readFile, readdir } from 'node:fs/promises'
 import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { MORE, MORE_CASES, MORE_HANDS, MORE_KINDS, MORE_LAID, MORE_TOUCHED, SPILL, shutIn } from './widget-cases.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const PICTURES = resolve(process.env.PICTURES || join(ROOT, '..', 'pictures.js'))
@@ -29,11 +30,13 @@ const server = createServer(async (req, res) => {
   const path = decodeURIComponent(new URL(req.url, 'http://x').pathname)
   if (path === '/full.html') return res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;overflow:hidden;background:#fff"><div id="s" style="position:absolute;inset:0"></div>')
   if (path === '/test.html') return res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><body style="margin:20px;background:#fff"><div id="s" style="width:760px;height:560px"></div>')
+  // A page that shuts the scene's page in a frame which may run scripts and nothing else, as a preview does.
+  if (path === '/framed.html') return res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><body style="margin:0;overflow:hidden"><iframe sandbox="allow-scripts" src="/full.html" style="position:absolute;left:40px;top:30px;width:700px;height:500px;border:0"></iframe>')
   let body
   // pictures.js itself, and what it loads, come from its own repository; everything else from this one.
   const file = path.startsWith('/pictures/') ? join(PICTURES, path.slice(10)) : join(ROOT, path)
   try { body = await readFile(file) } catch { return res.writeHead(404).end() }
-  res.writeHead(200, { 'content-type': TYPES[extname(path)] || 'application/octet-stream' }).end(body)
+  res.writeHead(200, { 'content-type': TYPES[extname(path)] || 'application/octet-stream', 'access-control-allow-origin': '*' }).end(body)
 })
 await new Promise((done) => server.listen(0, done))
 const at = `http://localhost:${server.address().port}`
@@ -42,7 +45,7 @@ const at = `http://localhost:${server.address().port}`
 const TOP = `const lib = await use("/dials.js")
 const { dial, slider, button, toggle, select, rotary, keyboard, scope, meter, label, group, row, column, grid, page, spacer, wrap, layout, room, over, dials, theme } = lib
 const drawn = async () => { await frame(); await frame(); await frame() }
-`
+` + MORE
 // Run a scene on the page as it is now; what it left in `result`, or its error.
 const play = (page, source, base) => page.evaluate(async ({ source, base }) => {
   const { runScene } = await import('/pictures/pictures.js')
@@ -549,6 +552,10 @@ const SILENT = () => {
     } })
   }
 }
+
+// The controls of the second part: their cases are kept in a file of their own, and run with the rest.
+CASES.push(...MORE_CASES)
+HANDS.push(...MORE_HANDS)
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 let failed = 0
@@ -1076,6 +1083,13 @@ async function layoutCases(browser, name, size) {
     [r.error || faults(r), r.plates.some((plate) => meet(plate.at, free)), r.controls.some((c) => meet(c.at, free)), free[0] > strip[0] + strip[2], free[0] + free[2] === r.W, free[1], free[1] + free[3] < r.plates[1].at[1], free[2] * free[3] > r.W * r.H * 0.4, r.free.join() === free.join(), strip[3] > r.H * 0.9],
     [[], false, false, true, true, 0, true, true, true, true])
   await shot('game')
+  // The controls of the second part, at this size: whole, apart, in the picture, each drawing only in its own box, and none too small for a finger.
+  for (const [scene, source] of Object.entries(MORE_LAID)) {
+    r = await lay(page, source)
+    const small = r.error || !r.coarse ? [] : r.controls.filter((c) => MORE_TOUCHED.includes(c.kind) && Math.min(c.whole[2], c.whole[3]) < TOUCH_LEAST).map((c) => `${c.kind} "${c.label}"`)
+    check(name, said(`the controls ${scene === 'any' ? 'for any program' : 'for ' + scene} are laid out whole and apart, each draws only in its own box, and none is too small for a finger`), [r.error || faults(r), r.error ? null : await page.evaluate(SPILL(MORE_KINDS)), small], [[], [], []])
+    await shot('more-' + scene)
+  }
   check(name, said('no scene left an error on the page'), errors, [])
   await context.close()
 }
@@ -1097,7 +1111,7 @@ for (const name of ['chromium', 'webkit']) {
   for (const c of HANDS) {
     const began = await play(page, TOP + c.setup + '\nawait drawn()\nwindow.result = "ready"')
     let got = began
-    if (began === 'ready') { try { got = await c.act(page) } catch (e) { got = { error: String(e) } } }
+    if (began === 'ready') { try { got = await c.act(page, { spot, read, finger, settle }) } catch (e) { got = { error: String(e) } } }
     await page.mouse.up()
     check(name, c.what, got, c.want)
   }
@@ -1169,6 +1183,7 @@ window.result = "ready"`)
     check(name, 'with reduced motion asked for, the keys jump to the new octave', got, [5, 0, true])
     await calm.close()
   }
+  await shutIn(browser, name, { at, play, check, SILENT, TOP })
   for (const size of Object.keys(SIZES)) await layoutCases(browser, name, size)
   await instrumentCases(browser, name)
   await browser.close()
