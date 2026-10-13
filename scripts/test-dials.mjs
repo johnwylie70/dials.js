@@ -190,6 +190,12 @@ await drawn()
 const under = (c) => { let said = ""; const g = dials().panel.g, was = g.fillText; g.fillText = function (t, ...rest) { said = t; return was.call(this, t, ...rest) }; c.draw(g, c.u); g.fillText = was; return said }
 window.result = [small.names.length, usual.names.length, usual.names.every((n) => !n.whole), large.names.every((n) => n.w > usual.names[n.i].w), large.w > usual.w && usual.w > small.w, many.names.length, three.names.every((n) => n.whole), under(small), under(many), [small, usual, large, many, three].every((c) => c.x >= 0 && c.x + c.w <= width)]`,
     want: [0, 4, true, true, true, 0, true, 'cathedral hall', '1', true] },
+  { what: 'a rotary with its names round it does not name its choice a second time underneath; a small one, with none round it, does',
+    source: `const three = rotary("e", ["sine", "saw", "noise"], "saw"), small = rotary("a", ["sine", "saw", "noise"], "saw", { size: "small" }), beside = dial("d", 0, 1)
+await drawn()
+const count = (c) => { const said = []; const g = dials().panel.g, was = g.fillText; g.fillText = function (t, ...rest) { said.push(t); return was.call(this, t, ...rest) }; c.draw(g, c.u); g.fillText = was; return said.filter((t) => t === "saw").length }
+window.result = [count(three), count(small), three.names.find((n) => n.i === 1).whole, beside.y === three.y && beside.h === three.h]`,
+    want: [1, 1, true, true] },
   { what: 'a target that says a setting has changed is asked about it again: a select keeps its choice while it is still there, a dial takes the new range, and a control that is gone is no longer told',
     source: `const heard = new Set()
 const input = { names: ["all", "1", "2"], on: "2", low: 0, high: 10, at: 4,
@@ -207,6 +213,20 @@ input.names = ["all", "1"]; input.on = "all"; input.low = 2; input.high = 3; inp
 await drawn()
 window.result = [...first.slice(0, 3), ...grown, device.choices, device.value, device.index, knob.value, level.min, level.max, level.value, input.on]`,
     want: [['all', '1', '2'], '2', 4, 4, '2', 4, '2', true, 10, 3, ['all', '1'], 'all', 0, 'all', 2, 3, 3, 'all'] },
+  { what: 'a dial turned by ratio from 0 has 0 at its bottom, and a value the target has a name for is shown by its name',
+    source: `const verb = { values: { decay: 0, size: 0.5 },
+  describe: (name) => ({ decay: { min: 0, max: 20, unit: "s", log: true, labels: { 0: "auto" } }, size: { min: 0, max: 1, labels: { 1: "huge" } } })[name],
+  get(name) { return this.values[name] }, set(name, value) { this.values[name] = value } }
+const d = dial("decay", verb, "decay"), z = dial("size", verb, "size"), own = dial("x", { min: 0, max: 10, log: true, logFrom: 0.1, format: (v) => (v ? v.toFixed(1) + "!" : "off") })
+const text = (c) => { let said = ""; c.draw({ fillText: (t) => { said = t }, beginPath() {}, arc() {}, stroke() {}, fill() {}, moveTo() {}, lineTo() {} }, 1); return said }
+const first = [d.value, d.pos, text(d), d.log, d.from, text(z), text(own)]
+d.slide(0.02); const still = d.value
+d.slide(0.04); const least = d.value
+d.slide(1); const most = d.value
+d.slide(0.52); const mid = d.value
+z.value = 1; own.slide(1)
+window.result = [...first, still, least, most, Math.round(mid * 100) / 100, text(d), verb.values.decay === d.value, d.toPos(0.02) === 1, text(z), text(own)]`,
+    want: [0, 0, 'auto', true, 0.02, '0.50', 'off', 0, 0.02, 20, 0.63, '0.632 s', true, false, 'huge', '10.0!'] },
   { what: 'the library can be made from its text alone, as a host with no modules does (Python\'s page)',
     source: `const text = await (await fetch("/dials.js")).text()
 const made = new Function(text.replace("export {", "return {"))()
@@ -776,7 +796,7 @@ async function modeCases(page, name, size, said, shot) {
   if (width >= 1100) {
     const big = await lay(page, MODES.fill), capped = await lay(page, MODES.capped), usual = big.coarse ? 1.15 : 1
     check(name, said('fit: "width" draws a panel bigger to fill a wide picture, its rows as written, no bigger than maxScale and no bigger than fits the height'),
-      [faults(big, { least: 0.5 }), plateLines(big), (size === 'full' ? big.u > usual + 0.1 : big.u >= usual - 1e-6) && big.u <= 1.6 + 1e-6, !big.view, capped.u <= 1.2 + 1e-6 && capped.u >= usual - 1e-6, new Set(dials(big).map((c) => Math.round(c.whole[2] * 10))).size],
+      [faults(big, { least: 0.5 }), plateLines(big), (size === 'full' ? big.u > usual + 0.1 : big.u >= (big.coarse ? 1 : 0.8) - 1e-6) && big.u <= 1.6 + 1e-6, !big.view, capped.u <= 1.2 + 1e-6 && capped.u >= (big.coarse ? 1 : 0.8) - 1e-6, new Set(dials(big).map((c) => Math.round(c.whole[2] * 10))).size],
       [[], WRITTEN, true, true, true, 1])
     await shot('fill')
   }
@@ -897,6 +917,50 @@ async function scrollCases(page, name, size, said, shot) {
   await page.waitForTimeout(200)
   check(name, said('let go while moving, the plates carry on a little way and come to rest'), [let_go >= 110, rest > let_go + 10, (await survey(page)).view.scroll === rest], [true, true, true])
   await shot('tall')
+}
+
+
+// --- the owner's panel on his tablet: seven titled groups, a scope and a keyboard, and nothing drawn by the scene
+const TABLET_PANEL = LEAD + `label("oscillator"); rotary("wave", lead, "wave"); dial("width", lead, "width"); dial("sub", lead, "sub")
+row()
+label("pwm"); dial("amount", lead, "lfo2.pulse_width"); dial("speed", lead, "lfo2.rate")
+row()
+label("unison"); dial("voices", lead, "voices"); dial("detune", lead, "detune"); dial("spread", lead, "spread")
+row()
+label("filter"); select("filter", lead, "filter"); dial("cutoff", lead, "cutoff", { size: "large" }); dial("resonance", lead, "resonance")
+row()
+label("shape"); dial("attack", lead, "attack"); dial("decay", lead, "decay"); dial("sustain", lead, "sustain"); dial("release", lead, "release")
+row()
+label("delay"); dial("amount", lead, "echo"); dial("time", lead, "delay.time"); dial("feedback", lead, "delay.feedback")
+row()
+label("reverb"); rotary("type", ["room", "hall", "plate", "cathedral", "spring"], "spring"); dial("amount", lead, "reverb"); dial("size", lead, "reverb.size"); dial("decay", lead, "chorus")
+scope(lead)
+keyboard(lead, { octave: 3, octaves: 2 })
+`
+/** The instrument keeps its height: the scope is there and can be read, the keys are tall enough to play, and where the plates are moved every point of the height is used. */
+async function instrumentCases(browser, name) {
+  for (const [width, height, what] of [[615, 860, 'the owner\'s tablet, as its preview draws it'], [1230, 1700, 'a tablet\'s whole screen'], [560, 1100, 'a split view'], [1440, 900, 'a desktop window'], [390, 844, 'a phone']]) {
+    const touch = width !== 1440
+    const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch, isMobile: touch && name === 'chromium', deviceScaleFactor: 1 })
+    await context.addInitScript(SILENT)
+    const page = await context.newPage()
+    const notes = []
+    page.on('console', (m) => { if (m.type() === 'info') notes.push(m.text()) })
+    await page.goto(`${at}/full.html`)
+    let r = await lay(page, TABLET_PANEL)
+    await page.waitForTimeout(700); r = await survey(page)
+    const u = r.u, scope = r.controls.find((c) => c.kind === 'scope'), keys = r.controls.find((c) => c.kind === 'keyboard')
+    const strip = (r.coarse ? 30 : 22) * u, gap = 8 * u, margin = 10 * u, pad = 8 * u
+    // From the top margin to the bottom one with nothing between but the gaps: the plates (or where they are seen), the scope's plate, the keyboard's.
+    const top = r.view ? r.view.y : Math.min(...r.plates.map((plate) => plate.at[1]))
+    const stack = r.view ? [r.view.y - margin, scope.whole[1] - pad - gap - (r.view.y + r.view.h), keys.whole[1] - pad - gap - (scope.whole[1] + scope.whole[3] + pad), height - margin - (keys.whole[1] + keys.whole[3] + pad)] : [top - margin, 0, keys.whole[1] - pad - gap - (scope.whole[1] + scope.whole[3] + pad), height - margin - (keys.whole[1] + keys.whole[3] + pad)]
+    check(name, `the instrument, ${what} (${width} by ${height}): the scope is there and no shorter than it can be read at, the keys are tall enough to play, and nothing is hidden`,
+      [r.error || faults(r), !!scope && scope.whole[3] >= 56 * u - 0.5 && scope.at[3] === scope.whole[3], keys.whole[3] - strip >= (150 - 30) * u - 0.5, r.controls.filter((c) => !c.at && !r.view).length, notes],
+      [[], true, true, 0, []])
+    check(name, `the instrument, ${what}: the height is all used, from the top margin to the bottom one, with no band left over`, stack.map((v) => Math.abs(v) < 1.5), [true, true, true, true])
+    if (SHOTS) await page.screenshot({ path: join(ROOT, 'shots', `${name}-instrument-${width}.png`) })
+    await context.close()
+  }
 }
 
 async function layoutCases(browser, name, size) {
@@ -1083,6 +1147,7 @@ window.result = "ready"`)
     await calm.close()
   }
   for (const size of Object.keys(SIZES)) await layoutCases(browser, name, size)
+  await instrumentCases(browser, name)
   await browser.close()
 }
 server.close()
