@@ -17,7 +17,7 @@ import { createServer } from 'node:http'
 import { mkdir, readFile, readdir } from 'node:fs/promises'
 import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { MORE, MORE_CASES, MORE_HANDS, MORE_KINDS, MORE_LAID, MORE_TOUCHED, SPILL, shutIn } from './widget-cases.mjs'
+import { MORE, MORE_CASES, MORE_HANDS, MORE_KINDS, MORE_LAID, MORE_TOUCHED, SPILL, realSynth, shutIn } from './widget-cases.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const PICTURES = resolve(process.env.PICTURES || join(ROOT, '..', 'pictures.js'))
@@ -25,7 +25,7 @@ const SHOTS = process.argv.includes('--shots')
 const from = process.env.PLAYWRIGHT || 'playwright'
 const playwright = await import(from.startsWith('/') ? pathToFileURL(join(from, 'index.mjs')).href : from)
 
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png' }
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.wasm': 'application/wasm' }
 const server = createServer(async (req, res) => {
   const path = decodeURIComponent(new URL(req.url, 'http://x').pathname)
   if (path === '/full.html') return res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;overflow:hidden;background:#fff"><div id="s" style="position:absolute;inset:0"></div>')
@@ -1196,6 +1196,7 @@ window.result = "ready"`)
     await calm.close()
   }
   await shutIn(browser, name, { at, play, check, SILENT, TOP })
+  await realSynth(browser, name, { at, check, SILENT, source: await readFile(join(ROOT, 'examples', 'trance.js'), 'utf8') })
   for (const size of Object.keys(SIZES)) await layoutCases(browser, name, size)
   await instrumentCases(browser, name)
   await browser.close()

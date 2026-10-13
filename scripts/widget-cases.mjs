@@ -670,3 +670,56 @@ window.result = "ready"`)
   check(name, 'a scene shut in a frame that may only run scripts is typed into as any other: the box is made in the frame and takes the keys', got, [[true, true, 'null'], ['Ada L', ['Ada L'], 8, null], []])
   await context.close()
 }
+
+/**
+ * THE EDITORS ON A REAL SYNTH, WITH THE SOUND TRULY ON. The trance example is run as it is written and its
+ * play switch pressed; then, several times over a second, each editor's lit step is read beside the
+ * synth's own count of the step that is sounding. They must move, and agree.
+ *
+ * A browser under test may never start the sound (Chromium there does not start an audio worklet, and the
+ * player waits "loading" while the page's clock runs on as if all were well). So Chromium is told to use
+ * the player that needs no worklet, and in either browser nothing is measured until the player has said
+ * it is "on" and the lead has a note sounding: a player still loading fails this case, it cannot pass it.
+ */
+export async function realSynth(browser, name, { at, check, SILENT, source }) {
+  const context = await browser.newContext({ viewport: { width: 900, height: 700 } })
+  await context.addInitScript(SILENT)
+  const page = await context.newPage()
+  const errors = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  await page.goto(`${at}/full.html`)
+  await page.evaluate(async ({ source, always }) => {
+    const { runScene } = await import('/pictures/pictures.js')
+    window.states = []
+    window.scene = runScene(document.getElementById('s'), { source, name: 'trance.js', base: '/examples/', keyboard: true, sound: { fallback: always ? 'always' : undefined, onState: (state) => window.states.push(state) }, onError: (message) => window.states.push('error: ' + message) })
+  }, { source, always: name === 'chromium' })
+  const P = `document.querySelector('#s canvas')[Symbol.for('dials.panel')]`
+  const ready = async (what, ms) => { try { await page.waitForFunction(what, null, { timeout: ms }); return true } catch { return false } }
+  let got
+  if (!await ready(`(() => { try { return ${P}.items.some((c) => c.kind === 'arpPattern' && c.w > 0) } catch (e) { return false } })()`, 8000)) got = { error: 'the example did not show its controls' }
+  else {
+    const play = () => page.evaluate(`(() => { const c = ${P}.items.find((c) => c.kind === 'toggle'), b = document.querySelector('#s canvas').getBoundingClientRect(); return [b.left + c.x + c.w / 2, b.top + c.y + c.h * 0.65] })()`)
+    await page.mouse.click(...await play())
+    const on = await ready(`window.states.at(-1) === 'on'`, 15000)
+    // Notes asked for while the sound was still coming on may have been dropped: the switch is turned off and on again now that it is on.
+    await page.mouse.click(...await play()); await page.waitForTimeout(450); await page.mouse.click(...await play())
+    const sounding = on && await ready(`${P}.items.find((c) => c.kind === 'arpPattern').target.notes().length > 0`, 4000)
+    if (!on || !sounding) got = { error: on ? 'the sound is on, but the lead has no note sounding' : 'the sound never came on', states: await page.evaluate('window.states') }
+    else {
+      const rows = []
+      for (let i = 0; i < 8; i++) {
+        await page.waitForTimeout(140)
+        rows.push(await page.evaluate(`(() => { const g = ${P}.items.find((c) => c.kind === 'tranceGate'), a = ${P}.items.find((c) => c.kind === 'arpPattern'); return [g.step, g.target.tranceGateStep(), g.length, a.step, a.target.arpStep(), a.length, window.states.at(-1)] })()`))
+      }
+      // An editor reads its synth once a frame, so it may be a step behind what the synth says a moment later.
+      const near = (shown, said, length) => shown >= 0 && said >= 0 && (said - shown + length) % length <= 1
+      got = {
+        on: rows.every((r) => r[6] === 'on'), gateMoves: new Set(rows.map((r) => r[0])).size >= 3, arpMoves: new Set(rows.map((r) => r[3])).size >= 3,
+        gateAgrees: rows.every((r) => near(r[0], r[1], r[2])), arpAgrees: rows.every((r) => near(r[3], r[4], r[5])), errors,
+      }
+      if (Object.values(got).some((v) => v === false)) got.rows = rows
+    }
+  }
+  check(name, 'on a real synth with the sound on, the trance example\'s two editors light the step that is sounding: over a second each moves through its pattern and agrees with the synth\'s own count', got, { on: true, gateMoves: true, arpMoves: true, gateAgrees: true, arpAgrees: true, errors: [] })
+  await context.close()
+}
