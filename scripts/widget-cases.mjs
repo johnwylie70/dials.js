@@ -5,12 +5,12 @@
  */
 
 /** The names a scene is given besides the first part's. */
-export const MORE = 'const { number, stepper, textBox, readout, checkbox, choose, radio, dropdown, xyPad, colourPicker, colorPicker, progress, light, busy, rangeSlider, fader, joystick, dpad, actionButton } = lib\n'
+export const MORE = 'const { number, stepper, textBox, readout, checkbox, choose, radio, dropdown, xyPad, colourPicker, colorPicker, progress, light, busy, rangeSlider, fader, joystick, dpad, actionButton, envelope, stepGrid, pads, wheel, modWheel, pitchWheel } = lib\n'
 
 /** The kinds of this part: at every size each is asked to draw, and must keep to its own box. */
-export const MORE_KINDS = ['number', 'textBox', 'readout', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'progress', 'light', 'busy', 'rangeSlider', 'fader', 'joystick', 'dpad', 'actionButton']
+export const MORE_KINDS = ['number', 'textBox', 'readout', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'progress', 'light', 'busy', 'rangeSlider', 'fader', 'joystick', 'dpad', 'actionButton', 'envelope', 'stepGrid', 'pads', 'wheel']
 /** Those a finger works: on a touch screen none is smaller than a finger. */
-export const MORE_TOUCHED = ['number', 'textBox', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'rangeSlider', 'fader', 'joystick', 'dpad', 'actionButton']
+export const MORE_TOUCHED = ['number', 'textBox', 'checkbox', 'choose', 'radio', 'dropdown', 'xyPad', 'colourPicker', 'rangeSlider', 'fader', 'joystick', 'dpad', 'actionButton', 'envelope', 'pads', 'wheel']
 
 export const MORE_CASES = [
   { what: 'a number box is a number: it counts in ones, or in tenths over a small range, and keeps to its range and its step',
@@ -120,6 +120,25 @@ window.result = [...first, crossed, loop.end, b.low]`,
 await drawn()
 window.result = [stick.x, stick.y, stick.distance, stick.value, pad.left, pad.right, pad.up, pad.down, pad.x, pad.y, pad.ways, fire.held, fire.pressed, stick.kind, typeof stick.control.w, fire.w === fire.h]`,
     want: [0, 0, 0, [0, 0], false, false, false, false, 0, 0, 4, false, false, 'joystick', 'number', true] },
+  { what: 'an envelope finds a target\'s attack, decay, sustain and release by name (or is given the names, or an object with the four numbers, or nothing) and sets them',
+    source: `const lead = { v: { attack: 0.02, decay: 0.3, sustain: 0.6, release: 0.8, a2: 0.1, d2: 0.2, s2: 0.3, r2: 0.4 }, describe: (n) => ({ attack: { min: 0.001, max: 2, unit: "s" }, decay: { min: 0.001, max: 2 }, sustain: { min: 0, max: 1 }, release: { min: 0.001, max: 4 } })[n], get(n) { return this.v[n] }, set(n, x) { this.v[n] = x } }
+const plain = { attack: 0.5, decay: 0.5, sustain: 0.5, release: 1 }
+const a = envelope("shape", lead), b = envelope("two", lead, "a2", "d2", "s2", "r2"), c = envelope(plain), d = envelope("alone", { attack: 0.2 })
+const first = [a.value, a.attack, a.parts[3].max, b.value, c.value, c.parts[0].max, d.value, a.label]
+a.attack = 1; a.value = [1, 1, 0.25, 9]; c.release = 1.5
+lead.v.sustain = 0.9
+await drawn()
+window.result = [...first, lead.v.attack, lead.v.release, a.sustain, plain.release]`,
+    want: [[0.02, 0.3, 0.6, 0.8], 0.02, 4, [0.1, 0.2, 0.3, 0.4], [0.5, 0.5, 0.5, 1], 2, [0.2, 0.3, 0.7, 0.5], 'shape', 1, 4, 0.9, 1.5] },
+  { what: 'a grid of steps is rows of cells read and written by a row\'s name or number, with a column lit as the one playing; pads named for drums play those drums\' notes; a pitch wheel is a slider from -1 to 1',
+    source: `const log = []
+const kit = { noteOn: (note, velocity) => log.push("on " + note + " " + velocity), noteOff: (note) => log.push("off " + note) }
+const g = stepGrid("drums", 8, ["kick", "snare"]), n = stepGrid(4, 2, { value: [[1, 0, 0, 1], [0, 0.5, 0, 0]] }), p = pads("kit", ["kick", "snare", "hat", "boom"], kit), q = pads(6), w = pitchWheel("bend"), m = modWheel("mod", 0, 127, 64)
+g.put("kick", 0, true); g.put(1, 4, 0.5); g.put("kick", 99, true); g.step = 9
+const first = [g.value, g.get("kick", 0), g.get("snare", 4), g.row("snare"), g.step, n.value, n.rows]
+g.clear(); p.hit("snare", 0.5); p.lift("snare"); p.flash("hat")
+window.result = [...first, g.row(0), p.notes, q.names.length, q.columns, log, [w.min, w.max, w.value, w.spring, w.vertical], [m.value, m.spring]]`,
+    want: [[[1, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0.5, 0, 0, 0]], 1, 0.5, [0, 0, 0, 0, 0.5, 0, 0, 0], 1, [[1, 0, 0, 1], [0, 0.5, 0, 0]], ['1', '2'], [0, 0, 0, 0, 0, 0, 0, 0], [36, 38, 42, 39], 6, 3, ['on 38 0.5', 'off 38'], [-1, 1, 0, true, true], [64, false]] },
 ]
 
 /** What is being typed into, and where it is on the page. */
@@ -394,6 +413,64 @@ window.t = { c: pad.control, pad, d: four.control, four, jump, n, downs, keys: (
       return [left, upLeft, middle, downAndJump, none, one, wasd, await read(page, '[t.n.value, t.downs.includes("ArrowLeft") && t.downs.includes(" ")]')]
     },
     want: [[true, false, false, false, -1, 0, ['ArrowLeft']], [true, true, -1, -1, ['ArrowLeft', 'ArrowUp']], [0, 0], [true, 1, [' ', 'ArrowDown']], [[0, 0], []], 1, [true, ['d']], [5, true]] },
+  { what: 'the corners of an envelope are dragged: the first sets the attack, the second the decay across and the sustain up and down, the last the release; and two taps put the shape back',
+    setup: `const heard = []
+const lead = { attack: 0.5, decay: 0.5, sustain: 0.5, release: 0.5 }
+window.t = { e: envelope("shape", lead, { width: 300, height: 200, onChange: (a, d, s, r) => heard.push([a, d, s, r]) }), lead, heard,
+  corner: (i) => { const p = t.e.shape(t.e.u).points[i], b = canvas.getBoundingClientRect(); return [b.left + p[0], b.top + p[1]] }, span: () => { const s = t.e.shape(t.e.u); return [s.w * 0.27, s.h] } }`,
+    async act(page, { read }) {
+      const corner = (i) => read(page, `t.corner(${i})`), [part, tall] = await read(page, 't.span()')
+      const drag = async (i, dx, dy) => { const [x, y] = await corner(i); await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + dx, y + dy, { steps: 3 }); await page.mouse.up(); await page.waitForTimeout(400) }
+      const two = (list) => list.map((n) => Math.round(n * 20) / 20)       // to the nearest twentieth: a pointer is on whole pixels
+      await drag(1, part / 4, 0)
+      const attack = two(await read(page, 't.e.value'))
+      await drag(2, -part / 4, -tall / 4)
+      const decay = two(await read(page, 't.e.value'))
+      await drag(4, 5000, 0)
+      const release = two(await read(page, '[t.lead.attack, t.lead.decay, t.lead.sustain, t.lead.release]'))
+      const heard = await read(page, 't.heard.length > 3 && t.heard.at(-1).length === 4')
+      const [x, y] = await corner(3)
+      await page.mouse.click(x, y); await page.mouse.click(x, y)
+      return [attack, decay, release, heard, await read(page, 't.e.value')]
+    },
+    want: [[1, 0.5, 0.5, 0.5], [1, 0, 0.75, 0.5], [1, 0, 0.75, 2], true, [0.5, 0.5, 0.5, 0.5]] },
+  { what: 'a tap turns a step on or off and a finger dragged along turns on every step it crosses; pads are hit several at once, each harder the nearer its middle, and play their target for as long as they are held',
+    setup: `const heard = [], log = []
+const kit = { noteOn: (note, velocity) => log.push("on " + note), noteOff: (note) => log.push("off " + note) }
+window.t = { g: stepGrid("drums", 8, ["kick", "snare"], { onChange: (row, step, on) => heard.push(row + " " + step + " " + on) }), p: pads("kit", ["kick", "snare", "hat", "clap"], kit, { onNoteOn: (note, velocity, name) => heard.push(name + (velocity > 0.8 ? " hard" : velocity < 0.6 ? " soft" : "")) }), heard, log,
+  cell: (r, s) => { const c = t.g.spotOf(r, s, t.g.u), b = canvas.getBoundingClientRect(); return [b.left + c.x + c.w / 2, b.top + c.y + c.h / 2] } }`,
+    async act(page, { spot, read, finger }) {
+      const cell = (r, s) => read(page, `t.cell(${r}, ${s})`)
+      await page.mouse.click(...await cell(0, 2))
+      const tapped = await read(page, '[t.g.get("kick", 2), t.heard]')
+      await page.waitForTimeout(400)
+      await finger(page, 'pointerdown', 11, await cell(1, 1))
+      for (const s of [2, 3, 4]) await finger(page, 'pointermove', 11, await cell(1, s))
+      await finger(page, 'pointerup', 11, await cell(1, 4))
+      const painted = await read(page, 't.g.row("snare")')
+      await page.mouse.click(...await cell(0, 2))
+      const off = await read(page, 't.g.row("kick")')
+      // Two pads at once: the kick in its middle, the clap near its corner.
+      const kick = await spot(page, 'p', 0.25, 0.3), clap = await spot(page, 'p', 0.95, 0.93)
+      await finger(page, 'pointerdown', 11, kick); await finger(page, 'pointerdown', 12, clap)
+      const both = await read(page, '[t.p.value, t.log]')
+      await finger(page, 'pointerup', 11, kick); await finger(page, 'pointerup', 12, clap)
+      return [tapped, painted, off, both, await read(page, '[t.p.value, t.log.slice(2), t.heard.slice(-2)]')]
+    },
+    want: [[1, ['kick 2 1']], [0, 1, 1, 1, 1, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [[0, 3], ['on 36', 'on 39']], [[], ['off 36', 'off 39'], ['kick hard', 'clap soft']]] },
+  { what: 'a pitch wheel is rolled and rolls back when it is let go; a mod wheel stays where it is put',
+    setup: `window.t = { w: pitchWheel("bend", { size: 100 }), m: modWheel("mod", 0, 100, 0, { size: 100 }) }`,
+    async act(page, { spot, read }) {
+      let [x, y] = await spot(page, 'w')
+      await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x, y - 25, { steps: 3 })
+      const rolled = await read(page, 'Math.round(t.w.value * 100) / 100');
+      await page.mouse.up()
+      const back = await read(page, 't.w.value');
+      [x, y] = await spot(page, 'm', 0.5, 1)
+      await page.mouse.move(x, y - 30); await page.mouse.down(); await page.mouse.move(x, y - 30 - 40, { steps: 3 }); await page.mouse.up()
+      return [rolled, back, await read(page, 'Math.round(t.m.value)')]
+    },
+    want: [0.5, 0, 40] },
 ]
 
 /** Scenes laid out at every size of screen: each must be whole, apart, in the picture and big enough for a finger. */
@@ -421,6 +498,11 @@ rangeSlider("price", 0, 100, [20, 80]); fader("vol", 0, 1, 0.7); fader("pan", -1
   // A game's controls in a strip along the bottom, with the scene in the room that is left.
   games: `group({ at: "bottom" }, () => { joystick(); dpad(); spacer(); actionButton("B", { size: "small" }); actionButton("A") })
 function draw() { background("#16324f"); const r = room(); rect(r.x, r.y, r.width, r.height, "#1f5f8b") }`,
+  music: `label("voice")
+envelope("shape"); pitchWheel("bend"); modWheel("mod")
+row()
+label("beat")
+stepGrid("drums", 16, ["kick", "snare", "hat"]); pads("kit", ["kick", "snare", "hat", "clap"])`,
 }
 
 /** In the page: every control of these kinds is drawn alone on a clear canvas, and what it painted is measured against its box. */

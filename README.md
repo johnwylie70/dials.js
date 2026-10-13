@@ -441,6 +441,31 @@ function update(dt) {
 
 For a game, put the controls in a strip and draw in the room that is left: `group({ at: "bottom", plate: false }, () => { … })` and `room()`. `examples/joystick_game.js` is a whole game made this way.
 
+### For music
+
+![The shape of a note as a graph with four corners, a pitch wheel and a mod wheel, four pads with the kick held, and a grid of sixteen steps for kick, snare and hat with the fifth column lit](docs/images/envelope-steps-pads.png)
+
+```js
+envelope("shape", lead)                                    // lead's attack, decay, sustain and release
+const grid = stepGrid("drums", 16, ["kick", "snare", "hat"])
+const kit = pads("kit", ["kick", "snare", "hat", "clap"], drums)
+
+function update(dt) {
+  grid.step = beat % 16                                    // light the column that is playing
+  if (grid.get("kick", grid.step)) drums.noteOn(36, 1)
+}
+```
+
+| | |
+|---|---|
+| `envelope(label, target)` | How a note begins, settles, holds and dies away, as a graph whose corners you drag: the first sets the attack, the second the decay (across) and the sustain (up and down), the last the release. It finds the target's `attack`, `decay`, `sustain` and `release` by those names, or takes the four names: `envelope("shape", lead, "a", "d", "s", "r")`. With no target, `shape.attack` and the rest are numbers to use. Two taps put it back; `onChange(attack, decay, sustain, release)`. |
+| `stepGrid(label, steps, rows)` | A grid of steps, each on or off: a row for each sound. A tap turns a step over, and a finger dragged along turns on (or off) every step it crosses. `grid.value` is the rows, each a list of 0 and 1; `grid.get("kick", 0)` reads one step and `grid.put("kick", 0, true)` writes one; `grid.row("kick")`, `grid.clear()`. `grid.step = 3` lights that column as the one playing. On a narrow screen a long row is put on two lines. Options: `value` (the rows to start with), `velocity: true` (drag up or down on a step for how hard, 0 to 1), `onChange(row, step, on)`. |
+| `pads(label, names, target)` | Pads to hit, several at once. Each plays a note of the target for as long as it is held (`noteOn(note, velocity)`, `noteOff(note)`), harder the nearer its middle it is hit. Pads named for drums play those drums' notes (a kick is 36, a snare 38, a hat 42); others count up from 36, or are told with `notes`. `kit.value` is the pads held now; `kit.flash("kick")` lights one from your code; `kit.hit("kick")` and `kit.lift("kick")` play one. Options: `notes`, `columns`, `size`, `onNoteOn(note, velocity, name)`, `onNoteOff(note, name)`. |
+| `pitchWheel(label, target, "setting")` | A wheel that is rolled, and rolls back to where it started when you let go. Alone, `bend = pitchWheel("bend")` runs from -1 to 1. |
+| `modWheel(…)`, `wheel(…)` | The same wheel, which stays where it is put (`{ spring: true }` makes it roll back). Both are sliders in every other way. |
+
+`examples/drum_machine.js` is a drum machine made of these: a grid, pads, a tempo and the shape of each hit.
+
 ## Targets
 
 A control can be tied to anything. No library is named: a target is known by what it can do, and every part is optional.
@@ -469,7 +494,7 @@ A host that keeps the scene's code somewhere else (pydials does) makes controls 
 PLAYWRIGHT=/path/to/node_modules/playwright node scripts/test-dials.mjs
 ```
 
-Real browsers (Chromium, and WebKit when Playwright has it) on pictures.js scenes: the controls are turned, pressed and played with a real mouse, the keyboard and several fingers, and every example is run. Then the layout is measured at seven sizes of screen (a small phone, a phone upright and on its side, a tablet's split view, a tablet on its side and upright, a desktop window): nothing overlaps or leaves the picture, a heading is on the same plate as its controls and above them, wrapped lines are balanced, a finger's target is never under 44 points, what does not fit is moved rather than shrunk, and a dial on plates that were moved or on a page that was turned to still keeps to the finger; and that rows told not to wrap never do, at one scale, that `columns` and `wrap()` are kept to, and that a panel of a set size is the same on every screen. No sound is made. pictures.js is taken from the folder beside this one.
+Real browsers (Chromium, and WebKit when Playwright has it) on pictures.js scenes: the controls are turned, pressed and played with a real mouse, the keyboard and several fingers, and every example is run. Then the layout is measured at seven sizes of screen (a small phone, a phone upright and on its side, a tablet's split view, a tablet on its side and upright, a desktop window): nothing overlaps or leaves the picture, a heading is on the same plate as its controls and above them, wrapped lines are balanced, a finger's target is never under 44 points, what does not fit is moved rather than shrunk, and a dial on plates that were moved or on a page that was turned to still keeps to the finger; and that rows told not to wrap never do, at one scale, that `columns` and `wrap()` are kept to, and that a panel of a set size is the same on every screen. The controls under [More controls](#more-controls) have their cases in `scripts/widget-cases.mjs`, run by the same command: each is worked with a real mouse and with fingers made by hand, typed into (also in a frame that may only run scripts, and with the picture scaled and the page scrolled), tied to a target, and at every size of screen asked to draw alone, where what it paints must lie inside its own box. No sound is made. pictures.js is taken from the folder beside this one.
 
 ## Licence
 
