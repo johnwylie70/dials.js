@@ -152,16 +152,16 @@ window.result = [...first, ...set, gate.text, gate.length, arp.text, arp.rows, p
     want: [[1, 0, 0, 1, 1, 0, 1, 0], { on: true, level: 1, accent: true }, 8, [9, 0, 5, 0, 9, 0, 0, 3], 'x.5.x..3', 8, "1 - 3 2 _ 1^ ~3 5':4", { note: 0, octave: 0, tie: true, accent: false, slide: false, length: 0 }, { note: 5, octave: 1, tie: false, accent: false, slide: false, length: 4 }, true, 0,
       [[1, 0, 0, 0, 1, 0, 0, 0], [0, 0, 1, 0, 0, 0, 1, 0]], 'x...x...\n..X...x.', true, 'x.5x', 4, 'x35.x..3', "1 - 2' 3,^:6 ~4", 5, 1, '....X...', '2468246824682468', 16, "1^ 1 ~3 - 1' ~1", 8, 'x.xxx', false, 'X.xx'] },
   { what: 'a pattern tied to a target is found by a synth\'s names for it, read and written as text, expanded from a name, follows the target, lights the step the target says is sounding, and has the target\'s named patterns and settings made beside it',
-    source: `const P = { gatePattern: { kind: "pattern", steps: 24, patterns: { mine: "xx..", pump: "2468" } }, gateDepth: { min: 0, max: 1 }, gateRate: { min: 0.25, max: 16 }, gateStereo: { kind: "bool" }, arpPattern: { kind: "pattern", steps: 32 } }
+    source: `const P = { tranceGate: { kind: "pattern", steps: 24, patterns: { mine: "xx..", pump: "2468" } }, tranceGateDepth: { min: 0, max: 1 }, tranceGateRate: { min: 0.25, max: 16 }, tranceGateStereo: { kind: "bool" }, arpPattern: { kind: "pattern", steps: 32 } }
 // As a synth keeps them: get() is always the text ("" for none), and the step that is sounding is a setting to read.
-const lead = { v: { gatePattern: "x.x.", gateDepth: 0.5, gateRate: 4, gateStereo: 0, arpPattern: "", levels: [1, 0, 0.5], gateStep: 2, arpStep: -1 }, describe: (n) => P[n], get(n) { return this.v[n] }, set(n, x) { this.v[n] = x } }
+const lead = { v: { tranceGate: "x.x.", tranceGateDepth: 0.5, tranceGateRate: 4, tranceGateStereo: 0, arpPattern: "", levels: [1, 0, 0.5], tranceGateStep: 2, arpStep: -1 }, describe: (n) => P[n], get(n) { return this.v[n] }, set(n, x) { this.v[n] = x } }
 const gate = tranceGate("gate", lead), arp = arpPattern(lead), list = steps("levels", lead, "levels")
 await drawn()
 const beside = dials().all.map((c) => c.kind + " " + c.label)
 const first = [gate.text, gate.lane.most, gate.step, arp.text, arp.step, lead.v.arpPattern, list.value, beside, dials().all[1].choices]
 gate.put(1, true); arp.preset("bounce"); list.put(1, 1); gate.preset("mine")
-const wrote = [lead.v.gatePattern, lead.v.arpPattern, lead.v.levels]
-lead.v.gatePattern = "x..5..x."; lead.v.gateStep = 5; lead.v.arpPattern = "trance"; lead.v.arpStep = 3
+const wrote = [lead.v.tranceGate, lead.v.arpPattern, lead.v.levels]
+lead.v.tranceGate = "x..5..x."; lead.v.tranceGateStep = 5; lead.v.arpPattern = "trance"; lead.v.arpStep = 3
 await drawn()
 window.result = [...first, wrote, gate.text, gate.length, gate.step, arp.text, arp.step]`,
     want: ['x.x.', 24, 2, '1 2 3 4', -1, '', [1, 0, 0.5], ['tranceGate ', 'select pattern', 'dial depth', 'dial rate', 'toggle stereo', 'arpPattern ', 'select pattern', 'steps levels'], ['yours', 'mine', 'pump'], ['xx..', '1 2 3 2', [1, 1, 0.5]], 'x..5..x.', 8, 5, '1^ - 3 2 - 1^ 3 -', 3] },
