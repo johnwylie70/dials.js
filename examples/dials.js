@@ -1351,10 +1351,11 @@ class Panel {
     // Controls carry their own room around them; boxes are kept a gap apart, and so is everything when a gap is asked for.
     const between = (a, b) => (a.items || b.items || box.gap != null ? gap : 0)
     const real = kids.filter((kid) => !isBreak(kid))
-    let greedy = false
-    for (const kid of real) greedy = this.measure(kid, inner).greedy || greedy
     const side = box.dock === 'left' || box.dock === 'right'
     const way = box.kind === 'grid' || box.columns ? 'grid' : box.kind === 'column' || (side && box.kind === 'group') ? 'column' : 'flow'
+    // Something inside that asks for a share of the room makes the box ask for all there is (a spacer in a column asks for height, not width).
+    let greedy = false
+    for (const kid of real) greedy = (this.measure(kid, inner).greedy && !(way === 'column' && kid.kind === 'spacer')) || greedy
     const m = { way, kids: real, head, th, pad, between, greedy: greedy || box.share != null }
     // `narrow`: how wide it would be with everything in it as narrow as it goes.
     let w = 0, h = 0, narrow = 0
