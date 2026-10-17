@@ -63,6 +63,33 @@ const after = custom({ width: 80, height: 40, draw(c) { c.rect(0, 0, c.width, c.
 await drawn()
 window.result = [px(after, 40, 20), px(bad, 20, 20, 22)]`,
     want: ['0,255,0,255', '255,0,0,255'] },
+  { what: 'custom: a design size is scaled to fit the control and centred in it, and a finger is given points of the design, whatever size the control is drawn at',
+    source: READ + `const heard = []
+const a = custom({ width: 200, height: 100, design: [100, 100], draw(c) { window.size = [c.width, c.height]; c.rect(0, 0, 100, 100, "#ff0000") }, onDown(p) { heard.push([Math.round(p.x), Math.round(p.y)]) } })
+const b = custom({ width: 100, height: 100, design: [200, 100], draw(c) { c.rect(0, 0, 200, 100, "#00ff00") } })
+await drawn()
+a.down({ x: a.x + a.w / 2, y: a.y + a.h / 2, id: 1 })
+a.down({ x: a.x + a.w / 2 + 25 * a.u, y: a.y + a.h / 2 - 25 * a.u, id: 1 })
+window.result = [window.size, px(a, 5, 50), px(a, 100, 50), px(a, 160, 50), px(b, 50, 5), px(b, 50, 25), px(b, 50, 95), heard]`,
+    want: [[100, 100], '28,31,39,255', '255,0,0,255', '28,31,39,255', '28,31,39,255', '0,255,0,255', '28,31,39,255', [[50, 50], [75, 25]]] },
+  { what: 'custom: c.spectrum is the wave in log-spaced bands, 0 to 1, the highest where the pitch is (a 1 kHz sine at full strength reaches the top in the band of 1 kHz)',
+    source: READ + `const wave = new Float32Array(1024)
+for (let i = 0; i < 1024; i++) wave[i] = Math.sin(2 * Math.PI * 1000 * i / 48000)
+let got = null
+custom({ width: 100, height: 60, bands: 32, source: { samples: () => wave, level: () => 0.5 }, animate: true, draw(c) { const s = c.spectrum; let top = 0; for (let i = 1; i < s.length; i++) if (s[i] > s[top]) top = i; got = [s.length, top, Math.round(s[top] * 100) / 100, Math.round(s[0] * 100) / 100, Math.round(s[31] * 100) / 100] } })
+await drawn()
+window.result = got`,
+    want: [32, 17, 0.99, 0.04, 0] },
+  { what: 'spectrum(): a control that shows the frequencies in a wave as bars: a 1 kHz sine gives its highest bar at the band of 1 kHz, it is drawn inside its own box, and peaks and bars are read as value',
+    source: READ + `const wave = new Float32Array(1024)
+for (let i = 0; i < 1024; i++) wave[i] = Math.sin(2 * Math.PI * 1000 * i / 48000)
+const s = lib.spectrum({ samples: () => wave }, { bands: 32 }), t = lib.spectrum("quiet", () => new Float32Array(1024))
+await drawn(); await drawn()
+const v = s.value
+let top = 0
+for (let i = 1; i < v.length; i++) if (v[i] > v[top]) top = i
+window.result = [v.length, top, v[top] > 0.9, Math.max(...t.value) < 0.01, s.w > 0 && s.x + s.w <= width && s.h > 0, s.kind]`,
+    want: [32, 17, true, true, true, 'spectrum'] },
   { what: 'custom: it is drawn only when it needs to be (animate: true draws it every frame, otherwise it waits for redraw(), a new value or a hand)',
     source: READ + `let a = 0, b = 0
 const A = custom({ width: 80, height: 40, animate: true, draw() { a++ } }), B = custom({ width: 80, height: 40, draw() { b++ } })
