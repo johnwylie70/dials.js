@@ -561,7 +561,7 @@ function play(p, c) {
 | `animate: true` | Draw it every frame. Leave it out for a control that changes only when touched: it costs nothing while it is still. |
 | `source` | What it listens to: a synth (or anything with `level()`, `samples()` or `notes()`), or a function. See below. |
 | `value` | Whatever you like to keep. Read and set it as `pad.value`. |
-| `width`, `height` | Its natural size in points. In a line it is narrowed and widened to fit, as other controls are. |
+| `width`, `height` | Its natural size in points. `height` is the drawing area: a label adds its own line above it, so `c.height` is the height you asked for. In a line the control is narrowed and widened to fit, as other controls are. |
 | `ops` | A list of shapes in place of `draw`, for a program that cannot hand over a function: `[["rect", 0, 0, 100, 40, "#334", 8], ["text", "hello", 50, 20, "white", 14]]`. |
 
 `pad.set(value)` is a change by hand: it sets the value, redraws, calls `onChange(value)` and tells the target, as turning a dial does. `pad.value = x` only sets and redraws. `pad.redraw()` draws it again after something you keep yourself has changed.
