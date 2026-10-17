@@ -13,20 +13,20 @@ const { custom } = lib
 `
 
 export const CUSTOM_CASES = [
-  { what: 'custom: a control of your own is laid out like any other, at the size it asks for (a height asked for is the whole box, the label line too), apart from its neighbours and inside the picture',
+  { what: 'custom: a control of your own is laid out like any other, at the size it asks for (a height asked for is the drawing area; a label adds its own line above it), apart from its neighbours and inside the picture',
     source: READ + `const a = custom("pad", { width: 160, height: 100 }), b = custom({ width: 120, height: 60 }), c = dial("d", 0, 1)
 const piano = keyboard()
 await drawn()
 const whole = (k) => k.w > 0 && k.x >= 0 && k.y >= 0 && k.x + k.w <= width && k.y + k.h <= piano.y
 window.result = [a.label, b.label, Math.round(a.w / a.u), Math.round(a.h / a.u), Math.round(b.w / b.u), Math.round(b.h / b.u), whole(a), whole(b), a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y, a.kind, c.kind]`,
-    want: ['pad', '', 160, 100, 120, 60, true, true, true, 'custom', 'dial'] },
+    want: ['pad', '', 160, 122, 120, 60, true, true, true, 'custom', 'dial'] },
   { what: 'custom: draw(c) is given a painter in the control\'s own points: its size, value, whether it is held, the accent colour, and what its source says',
     source: READ + `let seen = null
 const a = custom({ width: 120, height: 80, value: 0.25, source: () => 7, draw(c) { seen = [Math.round(c.width), Math.round(c.height), c.value, c.held, c.accent, c.input, typeof c.g, typeof c.theme.text] } })
 const b = custom("named", { width: 100, height: 50, colour: "tomato", draw(c) { window.named = [Math.round(c.height), c.accent, c.label] } })
 await drawn()
 window.result = [seen, window.named]`,
-    want: [[120, 80, 0.25, false, '#ffb224', 7, 'object', 'string'], [28, 'tomato', 'named']] },
+    want: [[120, 80, 0.25, false, '#ffb224', 7, 'object', 'string'], [50, 'tomato', 'named']] },
   { what: 'custom: the painter draws a rect, a frame, a circle, a ring, a line, lines, a polygon, text and a clear where it was told',
     source: READ + `const c = custom({ width: 200, height: 100, draw(p) {
   p.clear("#000000")
@@ -44,11 +44,11 @@ const g = layerOf().getContext("2d")
 const orange = () => { const d = g.getImageData(Math.round((c.x + 165 * c.u) * pixelRatio), Math.round((c.y + 62 * c.u) * pixelRatio), Math.round(30 * c.u * pixelRatio), Math.round(28 * c.u * pixelRatio)).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 90 && d[i + 1] < 190 && d[i + 2] < 60) n++; return n > 10 }
 window.result = [px(c, 5, 95), px(c, 25, 20), px(c, 50, 20), px(c, 65, 20), px(c, 110, 20), px(c, 140, 20), px(c, 150, 20), px(c, 30, 60), px(c, 80, 60), px(c, 100, 75), px(c, 140, 60), orange()]`,
     want: ['0,0,0,255', '255,0,0,255', '0,255,0,255', '0,0,0,255', '0,0,255,255', '255,255,0,255', '0,0,0,255', '255,0,255,255', '0,255,255,255', '0,255,255,255', '255,255,255,255', true] },
-  { what: 'custom: a list of drawing commands (ops), for a host that cannot hand over a function, draws the same, and a label moves the drawing down by its line (the label line comes out of the height asked for, and what is drawn past the box is cut off)',
+  { what: 'custom: a list of drawing commands (ops), for a host that cannot hand over a function, draws the same, and a label moves the drawing down by its line (the label line is added to the height asked for, and what is drawn past the box is cut off)',
     source: READ + `const a = custom({ width: 60, height: 40, ops: [["rect", 0, 0, 60, 40, "#ff0000"], ["circle", 30, 20, 10, "#0000ff"]] })
 const b = custom("lab", { width: 60, height: 40, ops: [["rect", 0, 0, 60, 40, "#00ff00"]] })
 await drawn()
-window.result = [px(a, 5, 5), px(a, 30, 20), px(b, 5, 5, 22), px(b, 30, 10, 22), px(b, 30, 38, 22) !== '0,255,0,255']`,
+window.result = [px(a, 5, 5), px(a, 30, 20), px(b, 5, 5, 22), px(b, 30, 10, 22), px(b, 30, 45, 22) !== '0,255,0,255']`,
     want: ['255,0,0,255', '0,0,255,255', '0,255,0,255', '0,255,0,255', true] },
   { what: 'custom: it is drawn only when it needs to be (animate: true draws it every frame, otherwise it waits for redraw(), a new value or a hand)',
     source: READ + `let a = 0, b = 0
