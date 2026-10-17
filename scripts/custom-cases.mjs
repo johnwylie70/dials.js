@@ -90,6 +90,11 @@ let top = 0
 for (let i = 1; i < v.length; i++) if (v[i] > v[top]) top = i
 window.result = [v.length, top, v[top] > 0.9, Math.max(...t.value) < 0.01, s.w > 0 && s.x + s.w <= width && s.h > 0, s.kind]`,
     want: [32, 17, true, true, true, 'spectrum'] },
+  { what: 'custom: a design keeps its shape: made too wide for its line it is narrowed, and made as tall as its shape says',
+    source: READ + `const a = custom({ design: [2000, 1000] })
+await drawn()
+window.result = [a.w <= width, Math.abs(a.h / a.w - 0.5) < 0.02]`,
+    want: [true, true] },
   { what: 'custom: it is drawn only when it needs to be (animate: true draws it every frame, otherwise it waits for redraw(), a new value or a hand)',
     source: READ + `let a = 0, b = 0
 const A = custom({ width: 80, height: 40, animate: true, draw() { a++ } }), B = custom({ width: 80, height: 40, draw() { b++ } })
