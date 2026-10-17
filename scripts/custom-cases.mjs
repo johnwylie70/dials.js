@@ -56,6 +56,13 @@ const side = custom({ width: 80, height: 40, draw(c) { c.circle(40, 20, 400, "#0
 await drawn()
 window.result = [px(a, 4, 6) !== '255,0,0,255', px(a, 40, 10, 22), px(side, 40, 20), px(side, -4, 20) !== '0,255,0,255', px(side, 84, 20) !== '0,255,0,255']`,
     want: [true, '255,0,0,255', '0,255,0,255', true, true] },
+  { what: 'custom: a control whose drawing throws, or has no size to draw in, does not stop the controls after it from being drawn',
+    source: READ + `const bad = custom("bad", { width: 80, height: 40, draw(c) { c.rect(0, 0, 50, 30, "#ff0000", 4); throw new Error("on purpose") } })
+const none = custom("none", { width: 80, height: 40, draw(c) { c.rect(0, 0, -5, -5, "#ff0000", 8); c.ring(0, 0, -3, "#ff0000", 2) } })
+const after = custom({ width: 80, height: 40, draw(c) { c.rect(0, 0, c.width, c.height, "#00ff00") } })
+await drawn()
+window.result = [px(after, 40, 20), px(bad, 20, 20, 22)]`,
+    want: ['0,255,0,255', '255,0,0,255'] },
   { what: 'custom: it is drawn only when it needs to be (animate: true draws it every frame, otherwise it waits for redraw(), a new value or a hand)',
     source: READ + `let a = 0, b = 0
 const A = custom({ width: 80, height: 40, animate: true, draw() { a++ } }), B = custom({ width: 80, height: 40, draw() { b++ } })
