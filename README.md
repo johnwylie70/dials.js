@@ -317,9 +317,10 @@ Every control takes a last `{ … }` of options. All of them take `x` and `y` (t
 | `toggle(label, on)` | A switch. `mute.on` is true or false. `toggle(label, target, "setting")` ties it to a setting. |
 | `rotary(label, choices, start)` | A knob that clicks between a few choices, with a notch for each and their names round it where there is room (a larger one shows more of each; with more than eight, only the one it is on). Drag to turn it from notch to notch, or tap a name. `mode.value`, `mode.index`, and `rotary(label, target, "setting")`, as a select. The choice is written under the knob only where no names are round it; `showValue: true` or `false` says otherwise. `select(…, { style: "rotary" })` is the same. |
 | `select(label, choices, start)` | One of a list, stepped through with the arrows at its sides. `wave.value` is the choice, `wave.index` its place. `select(label, target, "setting")` takes the choices from the target. |
-| `keyboard(target, { octave, octaves })` | A piano keyboard along the bottom. `piano.notes` is what is held now (60 is middle C). Options: `keys: false` (no computer keys), `hints: false` (no letters on the keys), `animate: false` (the keys jump to a new octave, not slide), `onNoteOn(note, velocity)`, `onNoteOff(note)`. It never shows so many octaves that a key is too narrow to play. |
+| `keyboard(target, { octave, octaves })` | A piano keyboard along the bottom. `piano.notes` is what is held now (60 is middle C). Options: `keys: false` (no computer keys), `hints: false` (no letters on the keys), `animate: false` (the keys jump to a new octave, not slide), `midi: true` (a MIDI button: [see below](#the-midi-button)), `onNoteOn(note, velocity)`, `onNoteOff(note)`. It never shows so many octaves that a key is too narrow to play. |
 | `scope(source)` | A line of numbers, live: a target with `samples()`, a function that returns a list, or a list. With no source, `graph.push(value)` adds a point. Options: `min`, `max`, `width`, `height`, `points`. |
 | `meter(source)` | A level from 0 to 1 as a bar of lights: a target with `level()`, a function, or `level.value = 0.7`. `[left, right]` makes two bars. |
+| `custom(label, { draw, onDown, onMove, onUp, source })` | A control of your own: you draw it, and say what a finger does to it. See [Your own controls](#your-own-controls). |
 | `label(text)` | Words. Made just before some controls, it is their heading. |
 | `group`, `row`, `column`, `grid`, `page`, `spacer`, `wrap` | What goes with what: see [Laying it out](#laying-it-out). |
 | `layout({ at: "bottom" })` | Where the plates go (`"top"`, `"bottom"`, `"left"`, `"right"`), `scale`, `wrap`, `fit`, `minScale`, `maxScale`, `columns`, `size`, `margin`, `compact`, `dividers`, `plates`, `align`, `backdrop` (true, false or a colour), `image` and `onResize`. It gives back `{ width, height, scale }`. |
@@ -514,9 +515,135 @@ It plays whatever it is given: `target` (or `targets`, a list or `{ kick: …, s
 
 `examples/drum_machine.js` is made of it, and `examples/trance.js` is a gated chord and an arpeggio drawn with the two pattern editors.
 
+## Your own controls
+
+Every control above is made from the same parts: how it looks, what a finger does to it, and what it listens to. `custom` gives you those parts, so a control can be anything: a ribbon you play a scale on, a pad that plays a chord, a level meter that listens to any sound, a sequencer with its own idea of a step, a scope drawn your way. It sits in the layout like any other control (on a plate, in a line or a grid), has a `value`, an `onChange`, and `place`, `remove` and the rest, and takes the same options (`x`, `y`, `share`, `span`, `colour`, `size`).
+
+![A ribbon of eight keys with one held, a ring that is as large as the sound is loud, a tempo dial and a row of sixteen steps with a scope beside it, all made with custom()](docs/images/custom-instrument.png)
+
+```js
+let held = null
+
+const ribbon = custom("ribbon", {
+  width: 340, height: 110, value: -1,             // its natural size, in points, and a value of your own
+  draw(c) {                                       // asked whenever it needs drawing
+    c.rect(0, 0, c.width, c.height, c.theme.well, 10)
+    for (let i = 0; i < 8; i++) {
+      const x = (i + 0.5) * c.width / 8
+      c.rect(x - c.width / 16 + 2, 4, c.width / 8 - 4, c.height - 8, i === c.value ? c.accent : c.theme.knob, 6)
+    }
+  },
+  onDown(p, c) { play(p, c) },                    // a finger went down at p.x, p.y (in the control's own points)
+  onMove(p, c) { play(p, c) },
+  onUp() { lead.noteOff(held); held = null; ribbon.value = -1 },
+})
+
+function play(p, c) {
+  const i = Math.max(0, Math.min(7, Math.floor(p.x / c.width * 8)))
+  if (i === ribbon.value) return
+  if (held != null) lead.noteOff(held)
+  held = 57 + [0, 2, 3, 5, 7, 8, 10, 12][i]
+  lead.noteOn(held, 0.9)
+  ribbon.set(i)                                   // sets the value, redraws, and calls onChange
+}
+```
+
+[`examples/custom_instrument.js`](examples/custom_instrument.js) is the whole instrument: this ribbon, a ring, and a row of steps that plays itself.
+
+### What you give it
+
+| Option | What it is |
+|---|---|
+| `draw(c)` | Draws the control. It is called when the control needs it: after a finger, after `value` or `redraw()`, and every frame with `animate`. |
+| `onDown(p, c)`, `onMove(p, c)`, `onUp(p, c)` | A finger, the mouse or a pen. `p.x` and `p.y` are in the control's own points, from `(0, 0)` at its top left; `p.id` says which finger and `p.shift` is true while Shift is held. |
+| `onKey(event, c)` | A key pressed while the control has the keyboard. Return `true` if you used it. |
+| `onFrame(c, now)` | Called every frame, drawn or not, with the time in milliseconds: the place to keep time, as a sequencer does. |
+| `animate: true` | Draw it every frame. Leave it out for a control that changes only when touched: it costs nothing while it is still. |
+| `source` | What it listens to: a synth (or anything with `level()`, `samples()` or `notes()`), or a function. See below. |
+| `value` | Whatever you like to keep. Read and set it as `pad.value`. |
+| `width`, `height` | Its natural size in points. In a line it is narrowed and widened to fit, as other controls are. |
+| `ops` | A list of shapes in place of `draw`, for a program that cannot hand over a function: `[["rect", 0, 0, 100, 40, "#334", 8], ["text", "hello", 50, 20, "white", 14]]`. |
+
+`pad.set(value)` is a change by hand: it sets the value, redraws, calls `onChange(value)` and tells the target, as turning a dial does. `pad.value = x` only sets and redraws. `pad.redraw()` draws it again after something you keep yourself has changed.
+
+### What draw() draws with
+
+`draw(c)` is given a painter. Everything is in the control's own points, from `(0, 0)` at the top left to `(c.width, c.height)`, so it looks the same on a phone and on a big screen. A colour is any colour you would write in a scene; leave it out and the control's accent is used.
+
+| | |
+|---|---|
+| `c.rect(x, y, w, h, colour, radius)` | A filled rectangle, with rounded corners if you give a `radius`. `c.frame(x, y, w, h, colour, thickness, radius)` is its outline. |
+| `c.circle(x, y, r, colour)` | A filled circle. `c.ring(x, y, r, colour, thickness)` is its outline. |
+| `c.line(x1, y1, x2, y2, colour, thickness)` | A line. `c.lines(points, colour, thickness)` is a line through `[[x, y], ...]`, and `c.polygon(points, colour)` a filled shape. |
+| `c.text(words, x, y, colour, size, align)` | Words, centred on `x, y` unless `align` is `"left"` or `"right"`. |
+| `c.clear(colour)` | Fills the whole control. |
+| `c.g` | The canvas's own 2D context, set up for the control, for anything else the canvas can do. |
+| `c.width`, `c.height`, `c.value`, `c.held`, `c.accent`, `c.label`, `c.theme` | The size, your value, whether a finger is down, the control's colour, its label, and the panel's colours (`c.theme.text`, `.dim`, `.well`, `.track`, `.knob`, `.good`, `.warn`, `.hot`). |
+| `c.input`, `c.samples`, `c.level` | What it is listening to. See below. |
+
+### Listening to a sound
+
+Give it a `source` and the page hands `draw` what the source is doing, every frame, with nothing to poll:
+
+![A chord pad of eight squares with one held, beside two dials](docs/images/custom-pad.png)
+
+- A synth, or anything with the same methods: `c.level` is how loud it is now (0 to 1), `c.samples` is its wave (numbers from -1 to 1) and `c.input` is the notes it is sounding.
+- A function: `c.input` is what it returned this frame.
+
+```js
+custom("level", {
+  width: 70, height: 150, source: lead, animate: true,
+  draw(c) {
+    const tall = c.height - 16, fill = tall * c.level
+    c.rect(c.width / 2 - 14, 8, 28, tall, c.theme.well, 6)
+    c.rect(c.width / 2 - 14, 8 + tall - fill, 28, fill, c.level > 0.85 ? c.theme.hot : c.theme.good, 6)
+  },
+})
+```
+
+![A level meter and a scope drawn by custom(), above a keyboard with three keys held. The meter and the scope are flat because this picture was made with no sound](docs/images/custom-meter.png)
+
+(The picture above was made in a browser with no sound, so the meter and the wave are at rest. With sound they move.) [`examples/custom_meter.js`](examples/custom_meter.js) is a level meter that holds its peak and a scope that draws the wave as a line, and [`examples/custom_pad.js`](examples/custom_pad.js) is the chord pad.
+
+### Building an instrument
+
+A control, a synth and a keyboard know nothing of each other until you tie them, so an instrument is a few of them with your own code between. The usual pieces:
+
+- **Play it:** call the synth from the callbacks: `lead.noteOn(note, velocity)` on `onDown`, `lead.noteOff(note)` on `onUp`, or `lead.play(notes, seconds)` for a note or a chord that ends by itself.
+- **Shape it:** tie other controls to its settings by name, `dial("cutoff", lead, "cutoff")`. Every name is in [the settings reference](https://github.com/johnwylie70/synths.js/blob/main/docs/settings.md).
+- **Watch it:** draw from `source: lead`.
+- **Keep time:** do it in `onFrame(c, now)` (a sequencer steps there), or give a sequencer control the sound's own clock as `drumSeq` does with `clock: soundTime`.
+- **Take another sound in:** a microphone has the same `level()` and `samples()` as a synth, so `custom("voice", { source: useMicrophone(), draw })` is a meter for your voice.
+
+In Python the same control is `custom("ribbon", width=340, height=110, draw=..., on_down=..., on_move=..., on_up=..., on_frame=..., animate=True, source=lead)`: the options take Python's spelling, and `draw(c)` is given a painter with the same methods, which Python sends to the page as a list of shapes.
+
+## The MIDI button
+
+`keyboard(lead, { midi: true })` puts a MIDI button on the keyboard's strip, beside the left arrow. A tap opens a panel for the device and the channel the synth listens to: every device or one, and every channel or 1 to 16.
+
+![The keyboard's MIDI panel open: the devices Keystation 49 and Launchkey Mini under "all", a row of sixteen channels, the keyboard below](docs/images/midi-panel.png)
+
+```js
+const lead = makeSynth("lead")
+
+scope(lead)
+keyboard(lead, { octave: 4, midi: true })
+```
+
+- The first tap makes the synth listen to MIDI, which is when the browser asks whether the page may use your MIDI devices.
+- What is chosen is the synth's own `lead.midiInput()`: it is what `lead.playFromMidi()` listens to, so a choice made in code (`lead.midiInput().device = "Keystation 49"`) shows in the panel and a choice made in the panel is what the code reads back.
+- A device plugged in while the panel is open appears in it. With nothing plugged in the one choice is "no devices".
+- The button is green while notes arrive, and keys held on the MIDI keyboard light on the screen.
+- Where the browser has no MIDI (Safari, an iPhone or an iPad's browser) the panel says so, and the keyboard goes on working from the screen and the computer's keys.
+- It needs a target that has `midiInput()`, which every synths.js synth has. A keyboard with no target, or one tied to something else, shows no button. It is not shown on a keyboard narrower than 230 points.
+
+To choose the device and channel for the whole program, or from controls of your own, see [Choosing the device and channel on screen](https://github.com/johnwylie70/synths.js#choosing-the-device-and-channel-on-screen) in synths.js: `select("midi in", midiInput(), "device")`.
+
 ## Targets
 
 A control can be tied to anything. No library is named: a target is known by what it can do, and every part is optional.
+
+A control tied to a setting takes its range, its unit and its choices from the target's `describe(name)`, so for a synths.js synth the name is the setting's name: [every setting name](https://github.com/johnwylie70/synths.js/blob/main/docs/settings.md) is listed there, with its range, where it starts, its Python spelling and the control that suits it (a dial for a number, a select for a choice, a toggle for on or off).
 
 | | |
 |---|---|
