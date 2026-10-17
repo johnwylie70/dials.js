@@ -630,12 +630,12 @@ scope(lead)
 keyboard(lead, { octave: 4, midi: true })
 ```
 
-- The first tap makes the synth listen to MIDI, which is when the browser asks whether the page may use your MIDI devices.
+- The first tap makes the keyboard listen to MIDI, which is when the browser asks whether the page may use your MIDI devices.
 - What is chosen is the synth's own `lead.midiInput()`: it is what `lead.playFromMidi()` listens to, so a choice made in code (`lead.midiInput().device = "Keystation 49"`) shows in the panel and a choice made in the panel is what the code reads back.
 - A device plugged in while the panel is open appears in it. With nothing plugged in the one choice is "no devices".
 - The button is green while notes arrive, and keys held on the MIDI keyboard light on the screen.
 - Where the browser has no MIDI (Safari, an iPhone or an iPad's browser) the panel says so, and the keyboard goes on working from the screen and the computer's keys.
-- It needs a target that has `midiInput()`, which every synths.js synth has. A keyboard with no target, or one tied to something else, shows no button. It is not shown on a keyboard narrower than 230 points.
+- It needs nothing. With a synths.js synth the choice is the synth's own, shared with `lead.midiInput()`. With any other target, or none (a synth kept in Python, or a keyboard that only has `onNoteOn`), the keyboard listens to the browser's MIDI itself, keeps its own choice, and plays what arrives through the keyboard. The button is not shown on a keyboard narrower than 230 points.
 
 To choose the device and channel for the whole program, or from controls of your own, see [Choosing the device and channel on screen](https://github.com/johnwylie70/synths.js#choosing-the-device-and-channel-on-screen) in synths.js: `select("midi in", midiInput(), "device")`.
 
