@@ -106,7 +106,7 @@ window.result = [laid.join() === back.join(), put, panel.items.includes(a), pane
 const c = custom({ width: 80, height: 40, on_down: f, on_move: f, on_up: f, on_key: f, on_frame: f, on_change: f })
 window.result = [typeof c.hear.down, typeof c.hear.move, typeof c.hear.up, typeof c.hear.key, typeof c.hear.frame, typeof c.onChange]`,
     want: ['function', 'function', 'function', 'function', 'function', 'function'] },
-  { what: 'MIDI button: a keyboard has one on its strip only when it is asked for (midi: true), its target has a midiInput(), and it is wide enough',
+  { what: 'MIDI button: a keyboard has one on its strip only when it is asked for (midi: true) and it is wide enough, whether or not its target has a midiInput() of its own',
     source: READ + `const lead = makeSynth("lead")
 const a = keyboard(lead, { octave: 4, midi: true })
 await drawn()
@@ -127,7 +127,7 @@ await drawn()
 const narrow = [d.hasMidi, Math.round(d.w / d.u) < 230]
 canvas.parentElement.style.width = "760px"
 window.result = [on, off, bare, narrow]`,
-    want: [[true, true], false, false, [false, true]] },
+    want: [[true, true], false, true, [false, true]] },
 ]
 
 export const CUSTOM_HANDS = [
@@ -177,6 +177,18 @@ const lead = makeSynth("lead")
 window.t = { k: keyboard(lead, { octave: 4, midi: true, onNoteOn: (n) => log.push(n) }), lead, log }
 window.btn = () => { const b = document.querySelector("#s canvas").getBoundingClientRect(), m = t.k.midiBox(t.k.u); return [b.left + m.x + m.w / 2, b.top + m.y + m.h / 2] }
 // Where a line of the panel is, on the page.
+window.at = (what) => {
+  const b = document.querySelector("#s canvas").getBoundingClientRect(), l = t.k.list, u = l.u
+  if (what.device !== undefined) return [b.left + l.x + 60 * u, b.top + l.y + 30 * u + what.device * l.line + l.line / 2]
+  const row = Math.floor(what.channel / l.perRow), col = what.channel % l.perRow
+  return [b.left + l.x + 10 * u + col * l.cell + l.cell / 2, b.top + l.y + l.h0 + 24 * u + row * (l.cell - 6 * u) + (l.cell - 6 * u) / 2]
+}`
+
+/** The same, on a target that has no MIDI input of its own: the keyboard listens to the browser's MIDI itself. */
+const PLAIN = `const log = [], keys = []
+const target = { noteOn: (n, v) => log.push(["on", n, Math.round(v * 127)]), noteOff: (n) => log.push(["off", n]) }
+window.t = { k: keyboard(target, { octave: 4, midi: true, onNoteOn: (n, v) => keys.push([n, Math.round(v * 127)]) }), target, log, keys }
+window.btn = () => { const b = document.querySelector("#s canvas").getBoundingClientRect(), m = t.k.midiBox(t.k.u); return [b.left + m.x + m.w / 2, b.top + m.y + m.h / 2] }
 window.at = (what) => {
   const b = document.querySelector("#s canvas").getBoundingClientRect(), l = t.k.list, u = l.u
   if (what.device !== undefined) return [b.left + l.x + 60 * u, b.top + l.y + 30 * u + what.device * l.line + l.line / 2]
@@ -246,6 +258,43 @@ export async function midiCases(browser, name, { play, check, SILENT, TOP, at, o
     await context.close()
   }
 
+  if (want('MIDI button: a target with no MIDI input')) {
+    const { context, page, errors } = await open(true)
+    const began = await play(page, TOP + PLAIN + '\nawait drawn()\nwindow.result = "ready"')
+    let got = began
+    if (began === 'ready') {
+      try {
+        const out = {}
+        out.button = await page.evaluate('t.k.hasMidi')
+        await page.mouse.click(...await page.evaluate('btn()'))
+        await wait(page, 700)
+        out.opened = await page.evaluate('[t.k.list.shown, t.k.list.devices(), t.k.list.channels().length]')
+        await page.mouse.click(...await page.evaluate('at({ device: 2 })'))
+        await wait(page, 300)
+        await page.mouse.click(...await page.evaluate('at({ channel: 3 })'))
+        await wait(page, 300)
+        out.chosen = await page.evaluate('[t.k.port.get("device"), t.k.port.get("channel")]')
+        // The other keyboard, and the wrong channel, are ignored.
+        await page.evaluate('send("a", [0x92, 65, 100]); send("b", [0x90, 66, 100])')
+        await wait(page, 200)
+        out.ignored = await page.evaluate('[t.log.slice(), t.keys.slice(), t.k.midiLit]')
+        // The chosen one on channel 3 plays the target, with its velocity, lights the key and the button.
+        await page.evaluate('send("b", [0x92, 64, 100])')
+        await wait(page, 100)
+        out.played = await page.evaluate('[t.log.slice(), t.keys.slice(), t.k.count.has(64), t.k.midiLit > 0, t.k.notes]')
+        await page.evaluate('send("b", [0x82, 64, 0])')
+        await wait(page, 200)
+        out.let_go = await page.evaluate('[t.log.slice(), t.k.count.has(64), t.k.notes]')
+        got = out
+      } catch (e) { got = { error: String(e) } }
+    }
+    check(name, 'MIDI button: a target with no MIDI input of its own gets the button too, and the keyboard listens itself: the panel lists both keyboards, only the chosen one on its channel plays the target (with its velocity, lighting the key and the button), and a note off lets it go',
+      [got, errors],
+      [{ button: true, opened: [true, ['all', 'Keystation 49', 'Launchkey Mini'], 17], chosen: ['Launchkey Mini', '3'], ignored: [[], [], 0],
+        played: [[['on', 64, 100]], [[64, 100]], true, true, [64]], let_go: [[['on', 64, 100], ['off', 64]], false, []] }, []])
+    await context.close()
+  }
+
   if (want('MIDI button: a touch outside')) {
     const { context, page } = await open(true)
     const began = await play(page, TOP + BOARD + '\nawait drawn()\nwindow.result = "ready"')
@@ -267,6 +316,21 @@ export async function midiCases(browser, name, { play, check, SILENT, TOP, at, o
       } catch (e) { got = { error: String(e) } }
     }
     check(name, 'MIDI button: a touch outside the panel closes it and is not felt by the key under it', got, [true, [false, []], true])
+    await context.close()
+  }
+
+  if (want('MIDI button: with no MIDI, a target with no MIDI input')) {
+    const { context, page, errors } = await open(false)
+    const began = await play(page, TOP + PLAIN + '\nawait drawn()\nwindow.result = "ready"')
+    let got = began
+    if (began === 'ready') {
+      try {
+        await page.mouse.click(...await page.evaluate('btn()'))
+        await wait(page, 700)
+        got = await page.evaluate('[t.k.hasMidi, t.k.list.shown, t.k.list.missing, t.k.list.devices()]')
+      } catch (e) { got = { error: String(e) } }
+    }
+    check(name, 'MIDI button: with no MIDI, a target with no MIDI input of its own still has the button, and the panel says so', [got, errors], [[true, true, true, ['no MIDI here']], []])
     await context.close()
   }
 
