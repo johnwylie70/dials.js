@@ -1209,6 +1209,7 @@ window.result = "ready"`)
     check(name, 'with reduced motion asked for, the keys jump to the new octave', got, [5, 0, true])
     await calm.close()
   }
+  await midiCases(browser, name, { play, check, SILENT, TOP, at, only: [] })
   await shutIn(browser, name, { at, play, check, SILENT, TOP })
   await realSynth(browser, name, { at, check, SILENT, source: await readFile(join(ROOT, 'examples', 'trance.js'), 'utf8') })
   for (const size of Object.keys(SIZES)) await layoutCases(browser, name, size)
