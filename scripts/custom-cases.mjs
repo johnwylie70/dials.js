@@ -50,6 +50,12 @@ const b = custom("lab", { width: 60, height: 40, ops: [["rect", 0, 0, 60, 40, "#
 await drawn()
 window.result = [px(a, 5, 5), px(a, 30, 20), px(b, 5, 5, 22), px(b, 30, 10, 22), px(b, 30, 45, 22) !== '0,255,0,255']`,
     want: ['255,0,0,255', '0,0,255,255', '0,255,0,255', '0,255,0,255', true] },
+  { what: 'custom: what a control draws is cut at the edge of its own area: a shape far bigger than it does not reach the label line above it, nor past its sides',
+    source: READ + `const a = custom("lab", { width: 80, height: 40, draw(c) { c.circle(40, 20, 400, "#ff0000") } })
+const side = custom({ width: 80, height: 40, draw(c) { c.circle(40, 20, 400, "#00ff00") } })
+await drawn()
+window.result = [px(a, 4, 6) !== '255,0,0,255', px(a, 40, 10, 22), px(side, 40, 20), px(side, -4, 20) !== '0,255,0,255', px(side, 84, 20) !== '0,255,0,255']`,
+    want: [true, '255,0,0,255', '0,255,0,255', true, true] },
   { what: 'custom: it is drawn only when it needs to be (animate: true draws it every frame, otherwise it waits for redraw(), a new value or a hand)',
     source: READ + `let a = 0, b = 0
 const A = custom({ width: 80, height: 40, animate: true, draw() { a++ } }), B = custom({ width: 80, height: 40, draw() { b++ } })
