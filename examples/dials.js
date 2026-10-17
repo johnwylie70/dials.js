@@ -1156,7 +1156,9 @@ class Keyboard extends Control {
     const hints = this.keys && (this.hints ?? !this.panel.coarse) && s.each >= 22 * u
     words(g, '‹', this.x + 14 * u, this.y + s.strip / 2 - 2 * u, 20 * u, this.accent)
     words(g, '›', this.x + this.w - 14 * u, this.y + s.strip / 2 - 2 * u, 20 * u, this.accent)
-    words(g, `C${this.first} to C${this.first + span}`, this.x + this.w / 2, this.y + s.strip / 2 - 2 * u, 12 * u, THEME.dim)
+    // The range is said in the room between the MIDI button (when there is one) and the right arrow.
+    const roomLeft = this.hasMidi ? this.midiBox(u).x + this.midiBox(u).w : this.x + 64 * u, roomRight = this.x + this.w - 64 * u
+    words(g, `C${this.first} to C${this.first + span}`, this.hasMidi ? (roomLeft + roomRight) / 2 : this.x + this.w / 2, this.y + s.strip / 2 - 2 * u, 12 * u, THEME.dim)
     if (this.hasMidi) this.drawMidi(g, u)
     // The keys, where they are now: across by `offset` while they slide, with those coming in from the side drawn too.
     const offset = this.offset

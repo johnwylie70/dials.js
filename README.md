@@ -317,7 +317,7 @@ Every control takes a last `{ … }` of options. All of them take `x` and `y` (t
 | `toggle(label, on)` | A switch. `mute.on` is true or false. `toggle(label, target, "setting")` ties it to a setting. |
 | `rotary(label, choices, start)` | A knob that clicks between a few choices, with a notch for each and their names round it where there is room (a larger one shows more of each; with more than eight, only the one it is on). Drag to turn it from notch to notch, or tap a name. `mode.value`, `mode.index`, and `rotary(label, target, "setting")`, as a select. The choice is written under the knob only where no names are round it; `showValue: true` or `false` says otherwise. `select(…, { style: "rotary" })` is the same. |
 | `select(label, choices, start)` | One of a list, stepped through with the arrows at its sides. `wave.value` is the choice, `wave.index` its place. `select(label, target, "setting")` takes the choices from the target. |
-| `keyboard(target, { octave, octaves })` | A piano keyboard along the bottom. `piano.notes` is what is held now (60 is middle C). Options: `keys: false` (no computer keys), `hints: false` (no letters on the keys), `animate: false` (the keys jump to a new octave, not slide), `midi: true` (a MIDI button: [see below](#the-midi-button)), `onNoteOn(note, velocity)`, `onNoteOff(note)`. It never shows so many octaves that a key is too narrow to play. |
+| `keyboard(target, { octave, octaves })` | A piano keyboard along the bottom. `piano.notes` is what is held now (60 is middle C). Options: `keys: false` (no computer keys), `hints: false` (no letters on the keys), `animate: false` (the keys jump to a new octave, not slide), `midi: true` (a MIDI button: [see below](#the-midi-button)), `onNoteOn(note, velocity)`, `onNoteOff(note)`. It shows as many octaves as you ask for, and no more than leave a key wide enough to play: on a touch screen a white key is at least 40 points wide (as the tracker's piano), so a phone shows one or two octaves and a tablet more. |
 | `scope(source)` | A line of numbers, live: a target with `samples()`, a function that returns a list, or a list. With no source, `graph.push(value)` adds a point. Options: `min`, `max`, `width`, `height`, `points`. |
 | `spectrum(source)` | The frequencies in a sound as bars, low to high from the left: a target with `samples()`, a function that returns a list of numbers, or a list. Options: `bands` (32), `peaks: false` (no ticks that hold), `rate` (48000, the sound card's rate, for where the bars fall), `width`, `height`, `size`. See [Spectrum](#spectrum). |
 | `meter(source)` | A level from 0 to 1 as a bar of lights: a target with `level()`, a function, or `level.value = 0.7`. `[left, right]` makes two bars. |
@@ -627,7 +627,7 @@ custom("level", {
 
 A control of your own is drawn on a layer of its own, the size of its area under the label, and that layer is laid on the panel. So nothing it draws can be seen outside its area, however large the shape: a ring far bigger than the box is cut at the box's edge, and never reaches the controls beside it. A drawing that throws, or a control with no size to draw in (a panel in a hidden frame), is skipped, and the other controls are drawn as usual.
 
-`design: [640, 300]` goes with that. You draw for one size, and the control scales it to fit the box it is given and centres it, so the same drawing fits a phone and a desk, and a finger comes back in points of that design.
+`design: [640, 300]` goes with that. You draw for one size, and the control scales it to fit the box it is given and centres it, so the same drawing fits a phone and a desk, and a finger comes back in points of that design. Give a design and no height, and the control keeps the design's shape: on a line too narrow for it, it is as wide as the line and as tall as that makes it (give `height` too, and the box is the size you say).
 
 ### Your own analyser
 
@@ -639,7 +639,7 @@ The ready-made `spectrum`, `scope` and `meter` are controls like these, so one o
 const BANDS = 48, bars = new Array(BANDS).fill(0)
 
 custom({
-  width: 640, height: 300, design: [640, 300], bands: BANDS, source: lead, animate: true,
+  design: [640, 300], bands: BANDS, source: lead, animate: true,
   draw(c) {
     c.clear(c.theme.well)
     const each = 520 / BANDS
