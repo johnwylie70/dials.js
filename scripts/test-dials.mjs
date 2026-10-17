@@ -17,6 +17,7 @@ import { createServer } from 'node:http'
 import { mkdir, readFile, readdir } from 'node:fs/promises'
 import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { CUSTOM_CASES, CUSTOM_HANDS, midiCases } from './custom-cases.mjs'
 import { MORE, MORE_CASES, MORE_HANDS, MORE_KINDS, MORE_LAID, MORE_TOUCHED, SPILL, realSynth, shutIn } from './widget-cases.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -566,8 +567,12 @@ const SILENT = () => {
 }
 
 // The controls of the second part: their cases are kept in a file of their own, and run with the rest.
-CASES.push(...MORE_CASES)
-HANDS.push(...MORE_HANDS)
+CASES.push(...MORE_CASES, ...CUSTOM_CASES)
+HANDS.push(...MORE_HANDS, ...CUSTOM_HANDS)
+
+// CASES=custom,MIDI runs only the cases (and the example) whose words include one of these, and nothing of the layout.
+const ONLY = (process.env.CASES || '').split(',').map((k) => k.trim()).filter(Boolean)
+const wanted = (c) => !ONLY.length || ONLY.some((k) => c.what.includes(k))
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 let failed = 0
@@ -1119,8 +1124,8 @@ for (const name of ['chromium', 'webkit']) {
   page.on('pageerror', (e) => errors.push(String(e)))
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
   await page.goto(`${at}/test.html`)
-  for (const c of CASES) check(name, c.what, await play(page, TOP + c.source), c.want)
-  for (const c of HANDS) {
+  for (const c of CASES.filter(wanted)) check(name, c.what, await play(page, TOP + c.source), c.want)
+  for (const c of HANDS.filter(wanted)) {
     const began = await play(page, TOP + c.setup + '\nawait drawn()\nwindow.result = "ready"')
     let got = began
     if (began === 'ready') { try { got = await c.act(page, { spot, read, finger, settle }) } catch (e) { got = { error: String(e) } } }
@@ -1131,7 +1136,7 @@ for (const name of ['chromium', 'webkit']) {
 
   // Every example, as `pictures run` shows it: filling the page.
   await page.goto(`${at}/full.html`)
-  for (const file of examples) {
+  for (const file of examples.filter((f) => !ONLY.length || f === 'custom_instrument.js')) {
     errors.length = 0
     const source = await readFile(join(ROOT, 'examples', file), 'utf8')
     const got = await page.evaluate(async ({ source, file }) => {
@@ -1148,6 +1153,8 @@ for (const name of ['chromium', 'webkit']) {
       return { error, painted: painted > 2000 }
     }, { source, file })
     check(name, `examples/${file} runs and shows its controls`, [got, errors], [{ error: null, painted: true }, []])
+    // Its own controls, made with custom(): the ribbon, the level ring and the row of steps.
+    if (file === 'custom_instrument.js') check(name, 'examples/custom_instrument.js is made of three custom controls, each with its own size', await page.evaluate(() => { const p = document.querySelector('#s canvas')[Symbol.for('dials.panel')]; return p.items.filter((c) => c.kind === 'custom').map((c) => [c.label, c.w > 40 && c.h > 40]) }), [['ribbon', true], ['level', true], ['steps', true]])
     if (/keyboard\(/.test(source)) {
       // Play a chord on the computer's keys: the example's synth sounds, and nothing breaks.
       await page.locator('#s canvas[tabindex]').focus()
@@ -1157,6 +1164,13 @@ for (const name of ['chromium', 'webkit']) {
       for (const key of ['KeyA', 'KeyD', 'KeyG']) await page.keyboard.up(key)
       check(name, `examples/${file} is played from the computer's keys`, errors, [])
     } else if (SHOTS) await page.screenshot({ path: join(ROOT, 'shots', `${name}-${file.replace('.js', '')}.png`) })
+  }
+
+  // Only some cases were asked for: the custom controls' own hands-on cases, and no layout.
+  if (ONLY.length) {
+    await midiCases(browser, name, { play, check, SILENT, TOP, at, only: ONLY })
+    await browser.close()
+    continue
   }
 
   // A touch screen the size of a tablet: the controls are made bigger for fingers, and a real tap plays a key and flips a switch.
