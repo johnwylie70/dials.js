@@ -319,8 +319,9 @@ Every control takes a last `{ … }` of options. All of them take `x` and `y` (t
 | `select(label, choices, start)` | One of a list, stepped through with the arrows at its sides. `wave.value` is the choice, `wave.index` its place. `select(label, target, "setting")` takes the choices from the target. |
 | `keyboard(target, { octave, octaves })` | A piano keyboard along the bottom. `piano.notes` is what is held now (60 is middle C). Options: `keys: false` (no computer keys), `hints: false` (no letters on the keys), `animate: false` (the keys jump to a new octave, not slide), `midi: true` (a MIDI button: [see below](#the-midi-button)), `onNoteOn(note, velocity)`, `onNoteOff(note)`. It never shows so many octaves that a key is too narrow to play. |
 | `scope(source)` | A line of numbers, live: a target with `samples()`, a function that returns a list, or a list. With no source, `graph.push(value)` adds a point. Options: `min`, `max`, `width`, `height`, `points`. |
+| `spectrum(source)` | The frequencies in a sound as bars, low to high from the left: a target with `samples()`, a function that returns a list of numbers, or a list. Options: `bands` (32), `peaks: false` (no ticks that hold), `rate` (48000, the sound card's rate, for where the bars fall), `width`, `height`, `size`. See [Spectrum](#spectrum). |
 | `meter(source)` | A level from 0 to 1 as a bar of lights: a target with `level()`, a function, or `level.value = 0.7`. `[left, right]` makes two bars. |
-| `custom(label, { draw, onDown, onMove, onUp, source })` | A control of your own: you draw it, and say what a finger does to it. See [Your own controls](#your-own-controls). |
+| `custom(label, { draw, onDown, onMove, onUp, source, design })` | A control of your own: you draw it, and say what a finger does to it. See [Your own controls](#your-own-controls). |
 | `label(text)` | Words. Made just before some controls, it is their heading. |
 | `group`, `row`, `column`, `grid`, `page`, `spacer`, `wrap` | What goes with what: see [Laying it out](#laying-it-out). |
 | `layout({ at: "bottom" })` | Where the plates go (`"top"`, `"bottom"`, `"left"`, `"right"`), `scale`, `wrap`, `fit`, `minScale`, `maxScale`, `columns`, `size`, `margin`, `compact`, `dividers`, `plates`, `align`, `backdrop` (true, false or a colour), `image` and `onResize`. It gives back `{ width, height, scale }`. |
@@ -515,6 +516,21 @@ It plays whatever it is given: `target` (or `targets`, a list or `{ kick: …, s
 
 `examples/drum_machine.js` is made of it, and `examples/trance.js` is a gated chord and an arpeggio drawn with the two pattern editors.
 
+## Spectrum
+
+`spectrum(lead)` shows what is in a sound as bars, the low notes at the left and the high ones at the right. Each bar is one band, and the bands are spaced the way notes are, from 30 Hz up to about 18 kHz, so an octave is the same width everywhere. A bar is as tall as the sound is loud in its band, on a scale from -90 dB (nothing) to 0 dB (a full-strength sine), with lines at -20, -40 and -60 and the marks 100, 1k and 10k below. A tick above each bar holds its highest point for about 0.7 of a second and then falls.
+
+```js
+const lead = makeSynth("lead")
+spectrum(lead, { bands: 48 })       // or spectrum("what you hear", lead), or spectrum(() => myWave)
+```
+
+![A spectrum of a chord on a saw wave, a scope of the wave and a level meter above a keyboard with three keys held](docs/images/spectrum.png)
+
+It takes what `scope` takes: a synth (or anything with `samples()`, so a microphone too), a function that returns a list of numbers, or a list. The bars are worked out from the last 1024 samples with a Hann window and an FFT, once for each frame, and they rise at once and fall away over about a second, so a note is easy to follow. [`examples/spectrum.js`](examples/spectrum.js) is the picture above. `bands` is how many bars (4 to 128). `rate` is the sound card's rate, which says where each band falls; leave it at 48000 unless you know the card's is 44100.
+
+In Python the same control is `spectrum(lead, bands=48)`, and the page works the bars out, so a synth in the page costs Python nothing.
+
 ## Your own controls
 
 Every control above is made from the same parts: how it looks, what a finger does to it, and what it listens to. `custom` gives you those parts, so a control can be anything: a ribbon you play a scale on, a pad that plays a chord, a level meter that listens to any sound, a sequencer with its own idea of a step, a scope drawn your way. It sits in the layout like any other control (on a plate, in a line or a grid), has a `value`, an `onChange`, and `place`, `remove` and the rest, and takes the same options (`x`, `y`, `share`, `span`, `colour`, `size`).
@@ -562,6 +578,8 @@ function play(p, c) {
 | `source` | What it listens to: a synth (or anything with `level()`, `samples()` or `notes()`), or a function. See below. |
 | `value` | Whatever you like to keep. Read and set it as `pad.value`. |
 | `width`, `height` | Its natural size in points. `height` is the drawing area: a label adds its own line above it, so `c.height` is the height you asked for. In a line the control is narrowed and widened to fit, as other controls are. |
+| `design: [w, h]` | The size you draw for. `c.width` and `c.height` are then `w` and `h` whatever the size the control really has, and what you draw is scaled to fit it and centred in it. A finger is given points of the design too. Leave it out and `c.width` and `c.height` are the control's own size in points. |
+| `bands`, `rate` | For `c.spectrum`: how many bands (32) and the sound card's rate (48000). |
 | `ops` | A list of shapes in place of `draw`, for a program that cannot hand over a function: `[["rect", 0, 0, 100, 40, "#334", 8], ["text", "hello", 50, 20, "white", 14]]`. |
 
 `pad.set(value)` is a change by hand: it sets the value, redraws, calls `onChange(value)` and tells the target, as turning a dial does. `pad.value = x` only sets and redraws. `pad.redraw()` draws it again after something you keep yourself has changed.
@@ -579,7 +597,7 @@ function play(p, c) {
 | `c.clear(colour)` | Fills the whole control. |
 | `c.g` | The canvas's own 2D context, set up for the control, for anything else the canvas can do. |
 | `c.width`, `c.height`, `c.value`, `c.held`, `c.accent`, `c.label`, `c.theme` | The size, your value, whether a finger is down, the control's colour, its label, and the panel's colours (`c.theme.text`, `.dim`, `.well`, `.track`, `.knob`, `.good`, `.warn`, `.hot`). |
-| `c.input`, `c.samples`, `c.level` | What it is listening to. See below. |
+| `c.input`, `c.samples`, `c.level`, `c.spectrum` | What it is listening to. See below. |
 
 ### Listening to a sound
 
@@ -587,7 +605,7 @@ Give it a `source` and the page hands `draw` what the source is doing, every fra
 
 ![A chord pad of eight squares with one held, beside two dials](docs/images/custom-pad.png)
 
-- A synth, or anything with the same methods: `c.level` is how loud it is now (0 to 1), `c.samples` is its wave (numbers from -1 to 1) and `c.input` is the notes it is sounding.
+- A synth, or anything with the same methods: `c.level` is how loud it is now (0 to 1), `c.samples` is its wave (numbers from -1 to 1), `c.spectrum` is the frequencies in it and `c.input` is the notes it is sounding. `c.spectrum` is a list of `bands` numbers (32 unless you give `bands`), low to high, spaced as notes are from 30 Hz up, each from 0 to 1 for -90 dB to 0 dB, so a full-strength sine reaches 1 in its band. It is worked out only when `draw` asks for it.
 - A function: `c.input` is what it returned this frame.
 
 ```js
@@ -605,6 +623,36 @@ custom("level", {
 
 (The picture above was made in a browser with no sound, so the meter and the wave are at rest. With sound they move.) [`examples/custom_meter.js`](examples/custom_meter.js) is a level meter that holds its peak and a scope that draws the wave as a line, and [`examples/custom_pad.js`](examples/custom_pad.js) is the chord pad.
 
+### Drawn inside its own box
+
+A control of your own is drawn on a layer of its own, the size of its area under the label, and that layer is laid on the panel. So nothing it draws can be seen outside its area, however large the shape: a ring far bigger than the box is cut at the box's edge, and never reaches the controls beside it. A drawing that throws, or a control with no size to draw in (a panel in a hidden frame), is skipped, and the other controls are drawn as usual.
+
+`design: [640, 300]` goes with that. You draw for one size, and the control scales it to fit the box it is given and centres it, so the same drawing fits a phone and a desk, and a finger comes back in points of that design.
+
+### Your own analyser
+
+The ready-made `spectrum`, `scope` and `meter` are controls like these, so one of your own is the same few lines. This one draws a level in dB as thirty lights, the spectrum as bars with ticks that hold, and the wave, for a size of 640 by 300:
+
+![A level meter in dB, a spectrum of 48 bars with peak ticks and the wave, drawn by custom(), above a keyboard with three keys held](docs/images/custom-analyser.png)
+
+```js
+const BANDS = 48, bars = new Array(BANDS).fill(0)
+
+custom({
+  width: 640, height: 300, design: [640, 300], bands: BANDS, source: lead, animate: true,
+  draw(c) {
+    c.clear(c.theme.well)
+    const each = 520 / BANDS
+    for (let i = 0; i < BANDS; i++) {
+      bars[i] = Math.max(c.spectrum[i] || 0, bars[i] - 0.02)          // rise at once, fall away
+      c.rect(100 + i * each + 1, 24 + 180 * (1 - bars[i]), each - 2, 180 * bars[i], c.accent)
+    }
+  },
+})
+```
+
+[`examples/custom_analyser.js`](examples/custom_analyser.js) is the whole one, with the level, the grid, the ticks that hold and the wave.
+
 ### Building an instrument
 
 A control, a synth and a keyboard know nothing of each other until you tie them, so an instrument is a few of them with your own code between. The usual pieces:
@@ -615,7 +663,7 @@ A control, a synth and a keyboard know nothing of each other until you tie them,
 - **Keep time:** do it in `onFrame(c, now)` (a sequencer steps there), or give a sequencer control the sound's own clock as `drumSeq` does with `clock: soundTime`.
 - **Take another sound in:** a microphone has the same `level()` and `samples()` as a synth, so `custom("voice", { source: useMicrophone(), draw })` is a meter for your voice.
 
-In Python the same control is `custom("ribbon", width=340, height=110, draw=..., on_down=..., on_move=..., on_up=..., on_frame=..., animate=True, source=lead)`: the options take Python's spelling, and `draw(c)` is given a painter with the same methods, which Python sends to the page as a list of shapes.
+In Python the same control is `custom("ribbon", width=340, height=110, draw=..., on_down=..., on_move=..., on_up=..., on_frame=..., animate=True, source=lead, design=(640, 300), bands=48, rate=48000)`: the options take Python's spelling, and `draw(c)` is given a painter with the same methods, which Python sends to the page as a list of shapes. `c.level`, `c.samples` (thinned to at most 128 points), `c.spectrum` and `c.input` are worked out in the page and sent to Python as text, a frame at a time, and only when `draw` reads them. Python's `c.spectrum` is the page's, because 128 points are too few to work a spectrum out from. [`examples/custom_analyser.py`](https://github.com/johnwylie70/pydials/blob/main/examples/custom_analyser.py) in pydials is the analyser above in Python.
 
 ## The MIDI button
 
